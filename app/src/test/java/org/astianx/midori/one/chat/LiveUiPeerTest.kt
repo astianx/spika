@@ -94,7 +94,7 @@ class LiveUiPeerTest {
             publish(File(directory, "peer-report.json"), JSONObject().put("status", "passed")
                 .put("account", second).put("phone", first).put("incomingId", received.id)
                 .put("replyId", replyId).put("incomingEncrypted", true).put("replyEncrypted", true)
-                .put("isolatedPeerStorage", "AES-256-GCM encrypted host file; no app vault or wallet access").toString(2))
+                .put("isolatedPeerStorage", "AES-256-GCM encrypted host file; no app vault access").toString(2))
             if (config.optBoolean("richChat")) {
                 val checked = org.json.JSONArray()
                 val seen = mutableSetOf<String>()
@@ -196,7 +196,7 @@ class LiveUiPeerTest {
         override fun failure(error: UiText) { throw IllegalStateException("Peer messaging failure") }
     }
 
-    /** Laboratory persistence only: no plaintext OMEMO keys, wallets or Android stores. */
+    /** Laboratory persistence only: no plaintext OMEMO keys or Android stores. */
     private class PrivatePeerRecords(private val file: File, password: String) : ChatRecords {
         private val random = SecureRandom()
         private val base64 = Base64.getEncoder()

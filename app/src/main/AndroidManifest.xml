@@ -25,7 +25,7 @@
         android:label="@string/app_name"
         android:localeConfig="@xml/locales_config"
         android:supportsRtl="true"
-        android:theme="@style/Theme.WdkStarter">
+        android:theme="@style/Theme.Midori">
         <!-- Initialize the bundled emoji font ourselves; no font-provider download. -->
         <provider android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup" tools:node="merge">

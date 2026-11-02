@@ -21,7 +21,7 @@ internal interface ChatRecords {
     fun <T> durableBatch(block: () -> T): T = block()
 }
 
-/** Chat credentials, identities, ratchets and history never share the wallet key or preferences. */
+/** Independent encrypted storage for chat credentials, identities, ratchets, trust and history. */
 internal class ChatVault(context: Context, storageName: String = "messenger-v1") : ChatRecords {
     companion object {
         private var appVault: ChatVault? = null

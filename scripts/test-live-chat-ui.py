@@ -143,7 +143,7 @@ def main():
     init = workspace / "peer.init.gradle"
     private_write(init, """allprojects {
     tasks.withType(Test).configureEach {
-        if (name == 'testMainnetDebugUnitTest') {
+        if (name == 'testDebugUnitTest') {
             systemProperty 'midori.liveUi.fixture', System.getenv('MIDORI_LIVE_UI_FIXTURE')
             // The laboratory relay listens on IPv4 loopback; TLS still verifies localhost.
             systemProperty 'java.net.preferIPv4Stack', 'true'
@@ -159,7 +159,7 @@ def main():
     clean_device_inputs()
     try:
         with (workspace / "peer.log").open("wb") as peer_log, (workspace / "device.log").open("wb") as device_log:
-            peer = subprocess.Popen([str(repository / "gradlew"), ":app:testMainnetDebugUnitTest", "--offline",
+            peer = subprocess.Popen([str(repository / "gradlew"), ":app:testDebugUnitTest", "--offline",
                                      "--tests", "org.astianx.midori.one.chat.LiveUiPeerTest", "--init-script", str(init)],
                                     cwd=repository, env=environment, stdout=peer_log, stderr=subprocess.STDOUT)
             print("Real JVM peer starting; accounts and encrypted peer state retained privately.", flush=True)

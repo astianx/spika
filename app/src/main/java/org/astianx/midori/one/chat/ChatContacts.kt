@@ -58,7 +58,7 @@ internal fun readDeviceChatContacts(context: Context): List<DeviceChatContact> {
             val protocol = cursor.getInt(2)
             val custom = cursor.getString(3).orEmpty().lowercase()
             if (protocol != ContactsContract.CommonDataKinds.Im.PROTOCOL_JABBER &&
-                !(protocol == ContactsContract.CommonDataKinds.Im.PROTOCOL_CUSTOM && custom in setOf("xmpp", "jabber", "midori", "midori wallet"))) continue
+                !(protocol == ContactsContract.CommonDataKinds.Im.PROTOCOL_CUSTOM && custom in setOf("xmpp", "jabber", "midori"))) continue
             val address = runCatching { parseChatContactLink(cursor.getString(1).orEmpty()) }.getOrNull() ?: continue
             val name = cursor.getString(0).orEmpty().filterNot(Char::isISOControl).take(60)
             rows += DeviceChatContact(address, name.ifBlank { address.substringBefore('@') })

@@ -14,11 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "wdk-starter-kotlin"
+rootProject.name = "midori-chat"
 include ':app'
-include ':wdk-core-kotlin'
-def wdkDirectory = file('vendor/wdk-core-kotlin')
-if (!new File(wdkDirectory, 'build.gradle').isFile()) {
-    throw new GradleException("WDK Kotlin module missing at ${wdkDirectory}. Run ./scripts/setup-wdk.sh first.")
-}
-project(':wdk-core-kotlin').projectDir = wdkDirectory

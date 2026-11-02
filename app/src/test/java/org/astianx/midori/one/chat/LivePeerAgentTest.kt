@@ -26,7 +26,7 @@ import org.junit.Test
 /**
  * Opt-in, file-driven laboratory peer for device acceptance. It is a genuine ejabberd/OMEMO client in its own JVM
  * with its own encrypted state; the driver script sends JSON commands and reads decoded events. It never touches
- * the app's vault or a wallet. Commands: addContact, answer, trust, send, loadProfile, download, status, stop.
+ * the app's vault. Commands: addContact, answer, trust, send, loadProfile, download, status, stop.
  */
 class LivePeerAgentTest {
     @Test fun runUntilStopped() {

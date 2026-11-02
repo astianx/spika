@@ -1,1 +1,1 @@
-# WDK Starter - no custom ProGuard rules needed
+# App-specific shrinking rules.

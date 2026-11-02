@@ -21,7 +21,7 @@ class ChatMediaUxTest {
     private val context = instrumentation.targetContext
 
     @Test fun pickerResultsCannotMoveToAnotherConversationOrAccount() = runBlocking {
-        // Isolated records and dispatcher: no live chat account, network or wallet access.
+        // Isolated records and dispatcher: no live chat account or network access.
         val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
         val dispatcher = executor.asCoroutineDispatcher()
         val records = object : ChatRecords {

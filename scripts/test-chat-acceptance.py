@@ -3,7 +3,7 @@
 
 Drives the installed debug MainActivity through adb/uiautomator while a separate JVM peer (a genuine
 ejabberd/OMEMO client, LivePeerAgentTest) is controlled through JSON command files. Creates only new
-laboratory accounts (midori-acc-*), never clears app data, never reads wallet or credential files, and keeps
+laboratory accounts (midori-acc-*), never clears app data, never reads credential files, and keeps
 the phone's existing chat account. The peer's encrypted state stays in --workspace.
 
   test-chat-acceptance.py --avd Pixel_6_API_34 --workspace DIR --report DIR SCENARIO [SCENARIO ...]
@@ -66,7 +66,7 @@ class Agent:
             (self.dir / name).unlink(missing_ok=True)
         init = self.dir / "agent.init.gradle"
         init.write_text("""allprojects { tasks.withType(Test).configureEach {
-  if (name == 'testMainnetDebugUnitTest') {
+  if (name == 'testDebugUnitTest') {
     systemProperty 'midori.peerAgent.fixture', System.getenv('MIDORI_PEER_AGENT_FIXTURE')
     systemProperty 'java.net.preferIPv4Stack', 'true'
     outputs.upToDateWhen { false }
@@ -75,7 +75,7 @@ class Agent:
 """)
         env = dict(os.environ, MIDORI_PEER_AGENT_FIXTURE=str(self.dir / "fixture.json"))
         log = (self.dir / "agent.log").open("wb")
-        self.process = subprocess.Popen([str(ROOT / "gradlew"), ":app:testMainnetDebugUnitTest", "--offline", "--tests",
+        self.process = subprocess.Popen([str(ROOT / "gradlew"), ":app:testDebugUnitTest", "--offline", "--tests",
                                          "org.astianx.midori.one.chat.LivePeerAgentTest", "--init-script", str(init)],
                                         cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
         ready = self.wait_event(lambda e: e["type"] == "ready", 300)

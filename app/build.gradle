@@ -15,20 +15,6 @@ def localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) {
     localPropertiesFile.withInputStream { localChatProperties.load(it) }
 }
-// Public Node/Cloudflare Workers origin only. Partner credentials must never be compiled into Android.
-def fiatBackendUrl = project.findProperty('midoriFiatBackendUrl')?.toString() ?:
-    System.getenv('MIDORI_FIAT_BACKEND_URL') ?: localChatProperties.getProperty('midori.fiat.backendUrl', '')
-if (fiatBackendUrl) {
-    def uri = new URI(fiatBackendUrl)
-    if (uri.scheme != 'https' || !uri.host || uri.userInfo || uri.query || uri.fragment ||
-        !(uri.path in ['', '/'])) throw new GradleException('Fiat backend must be an HTTPS origin.')
-}
-if (!fiatBackendUrl) {
-    if (project.findProperty('midoriRequireFiatBackend')?.toString() == 'true') {
-        throw new GradleException('Funding services require midori.fiat.backendUrl in local.properties or MIDORI_FIAT_BACKEND_URL. See docs/cloudflare-workers.md.')
-    }
-    logger.warn('Remote fiat/P2P funding services disabled: no HTTPS backend URL configured. See docs/cloudflare-workers.md.')
-}
 // Messaging service of the pilot. Public host/domain only; empty keeps the manual sign-in form.
 def pilotProperty = { String env, String key -> System.getenv(env) ?: localChatProperties.getProperty(key, '') }
 def chatPilotHost = pilotProperty('MIDORI_CHAT_PILOT_HOST', 'midori.chat.pilotHost')
@@ -61,17 +47,9 @@ android {
         versionCode 2
         versionName "0.1.0"
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
-        buildConfigField 'String', 'FIAT_BACKEND_URL', groovy.json.JsonOutput.toJson(fiatBackendUrl)
         buildConfigField 'String', 'CHAT_PILOT_HOST', groovy.json.JsonOutput.toJson(chatPilotHost)
         buildConfigField 'String', 'CHAT_PILOT_DOMAIN', groovy.json.JsonOutput.toJson(chatPilotDomain)
         buildConfigField 'int', 'CHAT_PILOT_PORT', chatPilotPort
-    }
-
-    flavorDimensions 'network'
-    productFlavors {
-        mainnet {
-            dimension 'network'
-        }
     }
 
     signingConfigs {
@@ -111,10 +89,6 @@ android {
 
     packagingOptions {
         resources { merges += ['META-INF/LICENSE*', 'META-INF/NOTICE*'] }
-        jniLibs {
-            // AGP 8.2.2 does not align uncompressed .so entries for 16 KB pages.
-            useLegacyPackaging true
-        }
     }
 
     compileOptions {
@@ -141,8 +115,6 @@ android {
 }
 
 dependencies {
-    implementation project(':wdk-core-kotlin')
-
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
     testImplementation 'org.json:json:20240303'
@@ -157,7 +129,6 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
     implementation 'androidx.activity:activity-compose:1.8.2'
-    implementation 'androidx.browser:browser:1.8.0'
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.ui:ui-graphics'
     implementation 'androidx.compose.foundation:foundation'
@@ -169,9 +140,6 @@ dependencies {
 
     implementation 'com.google.zxing:core:3.5.3'
     implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
-    // Pure secp256k1/Keccak primitives for the P2P.me relay protocol; no global provider replacement.
-    implementation 'org.bouncycastle:bcprov-jdk18on:1.80.2'
-
     // Signal OMEMO is GPLv3; see THIRD_PARTY_NOTICES.md before distributing the APK.
     def smackVersion = '4.5.0'
     implementation "org.igniterealtime.smack:smack-android:$smackVersion"

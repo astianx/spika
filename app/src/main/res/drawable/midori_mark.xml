@@ -1,25 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="696"
-    android:viewportHeight="696">
-    <group
-        android:scaleX="0.6"
-        android:scaleY="0.6"
-        android:translateX="139"
-        android:translateY="254">
-        <path
-            android:fillColor="@color/brand_mw_green"
-            android:pathData="M130,0 L234,240 L183,313 L130,191 L80,313 L0,313 Z" />
-        <path
-            android:fillColor="@color/brand_mw_ink"
-            android:pathData="M254,0 L202,79 L310,313 L397,313 Z" />
-        <path
-            android:fillColor="@color/brand_mw_silver"
-            android:pathData="M300,0 L384,0 L494,265 L443,313 Z" />
-        <path
-            android:fillColor="@color/brand_mw_slate"
-            android:pathData="M512,0 L565,122 L617,0 L696,0 L565,313 L462,87 Z" />
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="22" android:translateY="22">
+        <path android:fillColor="#147D64" android:pathData="M12,8H52C56.4,8 60,11.6 60,16V44C60,48.4 56.4,52 52,52H30L16,62V52H12C7.6,52 4,48.4 4,44V16C4,11.6 7.6,8 12,8Z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M16,21H48V25H16ZM16,31H48V35H16ZM16,41H36V45H16Z" />
     </group>
 </vector>

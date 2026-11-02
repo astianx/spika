@@ -31,7 +31,7 @@ data class AppUiState(
     val pendingLaunch: AppLaunch? = null
 )
 
-/** App navigation and transient notices; no account credentials or financial runtime. */
+/** App navigation, launch requests and transient notices. */
 class AppViewModel internal constructor(private val entryStore: AppEntryStore = MemoryAppEntryStore()) : ViewModel() {
     private val entered = entryStore.hasEntered()
     private val mutable = MutableStateFlow(AppUiState(

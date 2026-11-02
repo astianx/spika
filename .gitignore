@@ -13,4 +13,6 @@
 *.aab
 *.jks
 *.keystore
-/vendor/wdk-core-kotlin/
+
+__pycache__/
+*.pyc

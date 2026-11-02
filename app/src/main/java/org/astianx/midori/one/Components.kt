@@ -66,13 +66,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Original MW paths with a transparent background and a palette for each app theme. */
+/** Messaging mark shared by the introduction and app splash. */
 @Composable
 fun MidoriLogo(modifier: Modifier = Modifier) {
     Image(
-        painter = painterResource(if (LocalDarkTheme.current) R.drawable.midori_mw_dark else R.drawable.midori_mw),
-        contentDescription = stringResource(R.string.mw_logo),
-        modifier = modifier.aspectRatio(696f / 313f),
+        painter = painterResource(R.drawable.midori_chat),
+        contentDescription = stringResource(R.string.app_logo),
+        modifier = modifier.aspectRatio(1f),
         contentScale = ContentScale.Fit
     )
 }

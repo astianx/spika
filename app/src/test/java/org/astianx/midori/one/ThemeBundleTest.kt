@@ -14,7 +14,7 @@ class ThemeBundleTest {
         assertFalse(encoded.contains("12345678"))
         val decoded = ThemeBundle.decode(encoded.toByteArray())
         assertEquals(theme.app, decoded.app)
-        assertFalse(encoded.contains("wallet"))
+        assertEquals(setOf("format", "version", "app", "chats"), JSONObject(encoded).keys().asSequence().toSet())
         assertEquals(ChatWallpaperStyle.PLAIN, decoded.chats.wallpaper)
         assertNull(decoded.chats.photo)
         assertEquals(20, decoded.chats.fontSize)
@@ -34,12 +34,12 @@ class ThemeBundleTest {
         assertTrue(runCatching { ThemeBundle.decode(ByteArray(ThemeBundle.MAX_BYTES + 1)) }.isFailure)
         assertTrue(runCatching { ThemeBundle.decode("broken".toByteArray()) }.isFailure)
     }
-    @Test fun legacyThemesKeepAppAndChatAppearanceWithoutApplyingWalletSettings() {
+    @Test fun legacyThemesKeepAppAndChatAppearanceAndIgnoreUnknownSections() {
         val legacy = JSONObject(theme.encode()).put("version", 1)
-            .put("wallet", JSONObject().put("preferredToken", "USDT"))
+            .put("unusedSection", JSONObject().put("option", true))
         assertEquals(theme.app, ThemeBundle.decode(legacy.toString().toByteArray()).app)
         assertEquals(20, ThemeBundle.decode(legacy.toString().toByteArray()).chats.fontSize)
-        assertFalse(ThemeBundle.decode(legacy.toString().toByteArray()).encode().contains("wallet"))
+        assertEquals(setOf("format", "version", "app", "chats"), JSONObject(ThemeBundle.decode(legacy.toString().toByteArray()).encode()).keys().asSequence().toSet())
     }
     @Test fun shortHandleIsServerScopedAndNeverAResourceOrArbitraryDomain() {
         assertEquals("ponchale@example.org", resolveChatHandle("@ponchale", "me@example.org"))
