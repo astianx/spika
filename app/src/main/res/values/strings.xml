@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Product names, chain names and numeric hints are not translated. -->
-    <string name="app_name" translatable="false">MiWallet</string>
-    <string name="brand_name" translatable="false">MIDORI WALLET</string>
+    <string name="app_name" translatable="false">Midori</string>
+    <string name="brand_name" translatable="false">MIDORI</string>
     <string name="network_base" translatable="false">Base</string>
     <string name="qr_label" translatable="false">QR</string>
     <string name="amount_hint" translatable="false">0.00</string>
-    <string name="mw_logo">Midori Wallet MW logo</string>
+    <string name="mw_logo">Midori logo</string>
     <string name="appearance">Appearance</string>
     <string name="theme">Theme</string>
     <string name="change_theme">Change theme. Current: %1$s</string>
@@ -124,15 +124,15 @@
     <string name="error_delete_wallet">Could not delete the local wallet. Try again.</string>
 
     <!-- Welcome carousel and XMPP messaging preview. -->
-    <string name="onboarding_intro_title">Your money. Your conversations.</string>
-    <string name="onboarding_intro_body">USDC and USDT on Base, with XMPP messaging. Welcome to MiWallet.</string>
+    <string name="onboarding_intro_title">Your conversations, closer</string>
+    <string name="onboarding_intro_body">Private messages, groups and encrypted files. Start a conversation with Midori.</string>
     <string name="onboarding_assets_title">Digital dollars on Base</string>
     <string name="onboarding_assets_body">Native USDC and bridged USDT on Base, kept together as one digital dollar account.</string>
     <string name="onboarding_recovery_title">Your keys, your control</string>
     <string name="onboarding_recovery_body">Your recovery phrase restores your wallet. Keep its 12 words in a safe place and never share them.</string>
-    <string name="onboarding_messaging_title">Conversations with XMPP</string>
-    <string name="onboarding_messaging_body">Private messaging with the open XMPP protocol and mandatory OMEMO encryption.</string>
-    <string name="onboarding_intro_image">A wallet, digital coins and conversation bubbles</string>
+    <string name="onboarding_messaging_title">An open messaging network</string>
+    <string name="onboarding_messaging_body">Midori uses XMPP to connect accounts and OMEMO to encrypt private messages. Your account belongs to your messaging server.</string>
+    <string name="onboarding_intro_image">Conversation bubbles</string>
     <string name="onboarding_assets_image">Digital dollar tokens</string>
     <string name="onboarding_recovery_image">A recovery notebook with twelve empty spaces and a key</string>
     <string name="onboarding_messaging_image">Conversation bubbles connected through an open network</string>
@@ -146,7 +146,7 @@
     <string name="in_development">In development</string>
     <string name="chats">Chats</string>
     <string name="markets">Markets</string>
-    <string name="more">More</string>
+    <string name="more">Settings</string>
     <string name="get_started">Get started</string>
     <string name="go_to_chats">Go to chats</string>
     <string name="search">Search</string>
@@ -160,7 +160,7 @@
     <string name="chats_empty_title">Your conversations</string>
     <string name="chats_empty_body">Connect your account and start a private conversation.</string>
     <string name="help_center">Help center</string>
-    <string name="help_shortcut_body">Recovery, networks and first steps</string>
+    <string name="help_shortcut_body">Accounts, contacts, privacy and message delivery</string>
     <string name="wallet_setup_title">Your wallet, when you need it</string>
     <string name="wallet_setup_body">Create a wallet or import your recovery phrase to manage your assets.</string>
     <string name="buy">Buy</string>
@@ -182,8 +182,8 @@
     <string name="cancel">Cancel</string>
     <string name="contacts">Contacts</string>
     <string name="contacts_pending">Connect your messaging account to add contacts.</string>
-    <string name="profile_pending">Sign in to your messaging service. This account is separate from your wallet.</string>
-    <string name="scan_pending">Camera scanning is in development. You can already show your wallet QR from Receive.</string>
+    <string name="profile_pending">Sign in to manage your messaging profile.</string>
+    <string name="scan_pending">Scan a contact QR code from Chats or Settings to review their messaging address.</string>
     <string name="buy_pending">Buying with local currency is not available yet. A payment provider must be connected before showing offers, fees or payment methods.</string>
     <string name="price_alerts">Price alerts</string>
     <string name="alerts_pending">Alerts need live market data and notification settings. They are not active yet.</string>
@@ -198,7 +198,7 @@
 
     <!-- Private messaging -->
     <string name="chat_account_title">Messaging account</string>
-    <string name="chat_account_body">Sign in to your messaging service. This account is separate from your wallet.</string>
+    <string name="chat_account_body">Sign in to your messaging service or create a new account.</string>
     <string name="chat_account_address">Account · name@server</string>
     <string name="chat_password">Password</string>
     <string name="chat_server">Server address</string>
@@ -383,7 +383,7 @@
     <string name="chat_background_short">In background</string>
     <string name="style_title">Make it yours</string>
     <string name="style_intro">Your colors, your conversations, your space.</string>
-    <string name="style_summary">Themes, icon, chats and wallet</string>
+    <string name="style_summary">Themes, icon and conversations</string>
     <string name="style_jade">Jade</string>
     <string name="style_ocean">Ocean</string>
     <string name="style_plum">Plum</string>
@@ -415,7 +415,7 @@
     <string name="style_wallet_summary">Balance privacy, layout and preferred token</string>
     <string name="style_export">Export theme</string>
     <string name="style_import">Import theme</string>
-    <string name="style_portable_hint">Themes include global colors, fonts, chats and wallet appearance. Your photos, profile, accounts and conversation settings stay on this device. The icon and light/dark mode are chosen separately.</string>
+    <string name="style_portable_hint">Themes include global colors, fonts and chat appearance. Your photos, profile, accounts and conversation settings stay on this device. The icon and light/dark mode are chosen separately.</string>
     <string name="style_exported">Theme exported.</string>
     <string name="style_imported">Theme applied.</string>
     <string name="style_file_error">Could not read or save this theme. Choose a Midori theme file up to 32 KB.</string>
@@ -453,7 +453,7 @@
     <string name="style_direct_chats">People</string>
     <string name="profile_contact_handle">@username or full address</string>
     <string name="profile_start">A name to connect with</string>
-    <string name="profile_handle_hint">Your @username belongs to your messaging server. Share your full address so people on other servers can find you. This is not a wallet address.</string>
+    <string name="profile_handle_hint">Your @username belongs to your messaging server. Share your full address so people on other servers can find you.</string>
     <string name="profile_account">Connect or create an account</string>
     <string name="profile_name">Display name</string>
     <string name="profile_bio">About me</string>
@@ -772,4 +772,18 @@
     <string name="chat_pilot_username_invalid">Use 3 to 32 lowercase letters, numbers, dots, dashes or underscores.</string>
     <string name="chat_pilot_have_account">I already have an account</string>
     <string name="chat_pilot_create_instead">Create a new account</string>
+    <string name="onboarding_contacts_title">Connect with your people</string>
+    <string name="onboarding_contacts_body">Create a messaging account without a phone number. Add contacts by their address, link or QR code.</string>
+    <string name="onboarding_contacts_image">Contacts and a QR code</string>
+    <string name="onboarding_privacy_title">Choose trusted devices</string>
+    <string name="onboarding_privacy_body">Private chats use end-to-end encryption. Verify and approve your contacts’ devices before sending.</string>
+    <string name="onboarding_privacy_image">A shield protecting private conversations</string>
+    <string name="help_chat_account_title">Your messaging account</string>
+    <string name="help_chat_account_body">Create an account or sign in from account settings. Your address includes your messaging server; a short @username is scoped to that server. Keep your password private.</string>
+    <string name="help_chat_contacts_title">Add a contact</string>
+    <string name="help_chat_contacts_body">Use a messaging address, a contact link or a QR code. Review the proposed contact before saving. Profile publication is optional and requires your consent.</string>
+    <string name="help_chat_privacy_title">Verify your devices</string>
+    <string name="help_chat_privacy_body">Private messages and groups require end-to-end encryption and trusted devices. Compare fingerprints with your contact before approving a device. A public profile is readable by the server.</string>
+    <string name="help_chat_delivery_title">Connection and delivery</string>
+    <string name="help_chat_delivery_body">Check the connection and message status before retrying. Background connection is optional and uses a visible notification. Android may suspend delivery; force-stopping the app stops it until you reopen it.</string>
 </resources>

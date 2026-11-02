@@ -5,7 +5,7 @@ import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 
-/** Resolve at the UI boundary so retained wallet state follows locale changes. */
+/** Resolve at the UI boundary so retained state follows locale changes. */
 data class UiText(@StringRes val resourceId: Int, val arguments: List<Any> = emptyList()) {
     fun resolve(context: Context): String = context.getString(resourceId, *arguments.toTypedArray())
 

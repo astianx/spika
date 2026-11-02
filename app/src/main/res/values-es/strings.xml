@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="mw_logo">Logo MW de Midori Wallet</string>
+    <string name="mw_logo">Logotipo de Midori</string>
     <string name="appearance">Apariencia</string>
     <string name="theme">Tema</string>
     <string name="change_theme">Cambiar tema. Actual: %1$s</string>
@@ -118,15 +118,15 @@
     <string name="error_delete_wallet">No se pudo eliminar la billetera local. Reintenta.</string>
 
     <!-- Welcome carousel and XMPP messaging preview. -->
-    <string name="onboarding_intro_title">Tu dinero. Tus conversaciones.</string>
-    <string name="onboarding_intro_body">USDC y USDT en Base, con mensajería XMPP. Bienvenido a MiWallet.</string>
+    <string name="onboarding_intro_title">Tus conversaciones, más cerca</string>
+    <string name="onboarding_intro_body">Mensajes privados, grupos y archivos cifrados. Empieza una conversación con Midori.</string>
     <string name="onboarding_assets_title">Dólares digitales en Base</string>
     <string name="onboarding_assets_body">USDC nativo y USDT puenteado en Base, juntos como una sola cuenta de dólares digitales.</string>
     <string name="onboarding_recovery_title">Tus claves, tu control</string>
     <string name="onboarding_recovery_body">Tu frase de recuperación restaura tu billetera. Guarda sus 12 palabras en un lugar seguro y nunca las compartas.</string>
-    <string name="onboarding_messaging_title">Conversaciones con XMPP</string>
-    <string name="onboarding_messaging_body">Mensajería privada con el protocolo abierto XMPP y cifrado OMEMO obligatorio.</string>
-    <string name="onboarding_intro_image">Una billetera, monedas digitales y burbujas de conversación</string>
+    <string name="onboarding_messaging_title">Una red abierta de mensajería</string>
+    <string name="onboarding_messaging_body">Midori usa XMPP para conectar cuentas y OMEMO para cifrar mensajes privados. Tu cuenta pertenece a tu servidor de mensajería.</string>
+    <string name="onboarding_intro_image">Burbujas de conversación</string>
     <string name="onboarding_assets_image">Tokens de dólares digitales</string>
     <string name="onboarding_recovery_image">Un cuaderno de recuperación con doce espacios vacíos y una llave</string>
     <string name="onboarding_messaging_image">Burbujas de conversación conectadas mediante una red abierta</string>
@@ -140,7 +140,7 @@
     <string name="in_development">En desarrollo</string>
     <string name="chats">Chats</string>
     <string name="markets">Mercados</string>
-    <string name="more">Más</string>
+    <string name="more">Ajustes</string>
     <string name="get_started">Empezar</string>
     <string name="go_to_chats">Ir a chats</string>
     <string name="search">Buscar</string>
@@ -154,7 +154,7 @@
     <string name="chats_empty_title">Tus conversaciones</string>
     <string name="chats_empty_body">Conecta tu cuenta y empieza una conversación privada.</string>
     <string name="help_center">Centro de ayuda</string>
-    <string name="help_shortcut_body">Recuperación, redes y primeros pasos</string>
+    <string name="help_shortcut_body">Cuentas, contactos, privacidad y entrega de mensajes</string>
     <string name="wallet_setup_title">Tu billetera, cuando la necesites</string>
     <string name="wallet_setup_body">Crea una billetera o importa tu frase de recuperación para gestionar tus activos.</string>
     <string name="buy">Comprar</string>
@@ -176,8 +176,8 @@
     <string name="cancel">Cancelar</string>
     <string name="contacts">Contactos</string>
     <string name="contacts_pending">Conecta tu cuenta de mensajería para añadir contactos.</string>
-    <string name="profile_pending">Inicia sesión en tu servicio de mensajería. Esta cuenta es independiente de tu billetera.</string>
-    <string name="scan_pending">La lectura con cámara está en desarrollo. Ya puedes mostrar el QR de tu billetera desde Recibir.</string>
+    <string name="profile_pending">Inicia sesión para gestionar tu perfil de mensajería.</string>
+    <string name="scan_pending">Escanea un QR de contacto desde Chats o Ajustes para revisar su dirección de mensajería.</string>
     <string name="buy_pending">La compra con moneda local todavía no está disponible. Falta conectar un proveedor de pagos para mostrar ofertas, comisiones y métodos de pago.</string>
     <string name="price_alerts">Alertas de precios</string>
     <string name="alerts_pending">Las alertas necesitan datos de mercado y configuración de notificaciones. Todavía no están activas.</string>
@@ -192,7 +192,7 @@
 
     <!-- Private messaging -->
     <string name="chat_account_title">Cuenta de mensajería</string>
-    <string name="chat_account_body">Inicia sesión en tu servicio de mensajería. Esta cuenta es independiente de tu billetera.</string>
+    <string name="chat_account_body">Inicia sesión en tu servicio de mensajería o crea una cuenta nueva.</string>
     <string name="chat_account_address">Cuenta · nombre@servidor</string>
     <string name="chat_password">Contraseña</string>
     <string name="chat_server">Dirección del servidor</string>
@@ -377,7 +377,7 @@
     <string name="chat_background_short">En segundo plano</string>
     <string name="style_title">Hazlo tuyo</string>
     <string name="style_intro">Tus colores, tus conversaciones, tu espacio.</string>
-    <string name="style_summary">Temas, icono, chats y wallet</string>
+    <string name="style_summary">Temas, icono y conversaciones</string>
     <string name="style_jade">Jade</string>
     <string name="style_ocean">Océano</string>
     <string name="style_plum">Ciruela</string>
@@ -409,7 +409,7 @@
     <string name="style_wallet_summary">Privacidad de saldos, diseño y token preferido</string>
     <string name="style_export">Exportar tema</string>
     <string name="style_import">Importar tema</string>
-    <string name="style_portable_hint">Los temas incluyen colores, fuentes y apariencia general de chats y wallet. Tus fotos, perfil, cuentas y ajustes por conversación se quedan en este dispositivo. El icono y el modo claro/oscuro se eligen por separado.</string>
+    <string name="style_portable_hint">Los temas incluyen colores globales, fuentes y apariencia de chats. Tus fotos, perfil, cuentas y ajustes de conversaciones permanecen en este dispositivo. El icono y el modo claro u oscuro se eligen aparte.</string>
     <string name="style_exported">Tema exportado.</string>
     <string name="style_imported">Tema aplicado.</string>
     <string name="style_file_error">No se pudo leer o guardar el tema. Elige un archivo de tema Midori de hasta 32 KB.</string>
@@ -447,7 +447,7 @@
     <string name="style_direct_chats">Personas</string>
     <string name="profile_contact_handle">@usuario o dirección completa</string>
     <string name="profile_start">Un nombre para conectar</string>
-    <string name="profile_handle_hint">Tu @usuario pertenece a tu servidor de mensajería. Comparte la dirección completa para que te encuentren desde otros servidores. No es una dirección de wallet.</string>
+    <string name="profile_handle_hint">Tu @usuario pertenece a tu servidor de mensajería. Comparte tu dirección completa para que puedan encontrarte desde otros servidores.</string>
     <string name="profile_account">Conectar o crear una cuenta</string>
     <string name="profile_name">Nombre del perfil</string>
     <string name="profile_bio">Sobre mí</string>
@@ -766,4 +766,18 @@
     <string name="chat_pilot_username_invalid">Usa de 3 a 32 letras minúsculas, números, puntos, guiones o guiones bajos.</string>
     <string name="chat_pilot_have_account">Ya tengo una cuenta</string>
     <string name="chat_pilot_create_instead">Crear una cuenta nueva</string>
+    <string name="onboarding_contacts_title">Conecta con tu gente</string>
+    <string name="onboarding_contacts_body">Crea una cuenta de mensajería sin número de teléfono. Agrega contactos por su dirección, enlace o código QR.</string>
+    <string name="onboarding_contacts_image">Contactos y un código QR</string>
+    <string name="onboarding_privacy_title">Elige dispositivos de confianza</string>
+    <string name="onboarding_privacy_body">Los chats privados usan cifrado de extremo a extremo. Verifica y aprueba los dispositivos de tus contactos antes de enviar.</string>
+    <string name="onboarding_privacy_image">Un escudo protege conversaciones privadas</string>
+    <string name="help_chat_account_title">Tu cuenta de mensajería</string>
+    <string name="help_chat_account_body">Crea una cuenta o inicia sesión desde los ajustes de cuenta. Tu dirección incluye el servidor de mensajería; un @usuario corto pertenece a ese servidor. Mantén tu contraseña privada.</string>
+    <string name="help_chat_contacts_title">Agrega un contacto</string>
+    <string name="help_chat_contacts_body">Usa una dirección de mensajería, un enlace de contacto o un código QR. Revisa el contacto propuesto antes de guardarlo. Publicar tu perfil es opcional y requiere tu consentimiento.</string>
+    <string name="help_chat_privacy_title">Verifica tus dispositivos</string>
+    <string name="help_chat_privacy_body">Los mensajes y grupos privados requieren cifrado de extremo a extremo y dispositivos de confianza. Compara las huellas con tu contacto antes de aprobar un dispositivo. El servidor puede leer un perfil público.</string>
+    <string name="help_chat_delivery_title">Conexión y entrega</string>
+    <string name="help_chat_delivery_body">Comprueba la conexión y el estado del mensaje antes de reintentar. La conexión en segundo plano es opcional y usa una notificación visible. Android puede suspender la entrega; forzar el cierre la detiene hasta que abras la app.</string>
 </resources>

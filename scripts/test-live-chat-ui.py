@@ -2,9 +2,8 @@
 """Opt-in acceptance against visible Pixel/MainActivity and the real local ejabberd.
 
 Creates actual lab accounts, or only a new companion for --existing-phone-account.
-Keeps account A, its messages and the user's wallet
-untouched after acceptance; B's independent JVM state is encrypted in --workspace.
-Never clears app data, inspects wallet files, sends funds or prints credentials.
+Keeps account A and its messages after acceptance; B's independent JVM state is encrypted in --workspace.
+Never clears app data or prints credentials.
 Build/install the debug and androidTest APKs first. The emulator must already be
 running with its visible window. This runner does not start a headless emulator.
 """
@@ -23,7 +22,7 @@ import sys
 import time
 
 
-PACKAGE = "org.astianx.midori.one"
+PACKAGE = "org.astianspika.android"
 PRIVATE_FILES = (
     "files/chat-live-ui.json",
     "files/chat-live-ui-phone.json",
@@ -213,9 +212,18 @@ def main():
         device_output = (workspace / "device.log").read_text(errors="replace")
         if phone.returncode != 0 or "OK (1 test)" not in device_output or peer.returncode != 0:
             raise RuntimeError("Live UI acceptance failed; inspect private device.log / peer.log")
+        # Intent launches are a separate test: ActivityScenario must first destroy its
+        # owned activity, so an Android task switch cannot invalidate that lifecycle test.
+        launch_output = command(adb + ["shell", "am", "instrument", "-w", "-r", "-e", "class",
+            "org.astianx.midori.one.chat.AppLaunchDeviceTest",
+            f"{PACKAGE}.test/androidx.test.runner.AndroidJUnitRunner"], timeout=120,
+            label="App intent acceptance")
+        private_write(workspace / "launch.log", launch_output)
+        if b"OK (1 test)" not in launch_output:
+            raise RuntimeError("App intent acceptance failed; inspect private launch.log")
         evidence = workspace / "evidence"
         evidence.mkdir(exist_ok=True, mode=0o700)
-        for filename in ("conversation.png", "chats.png", "wallet.png", "settings.png", "device-report.json"):
+        for filename in ("conversation.png", "chats.png", "settings.png", "contact-link-review.png", "notification-conversation.png", "own-contact-qr.png", "device-report.json", "launch-report.json"):
             content = device_read("cache/live-ui/" + filename)
             if not content:
                 raise RuntimeError("A required real UI evidence artifact is missing")
@@ -233,8 +241,7 @@ def main():
         private_write(evidence / "peer-report.json", (workspace / "peer-report.json").read_bytes())
         print(json.dumps({"status": "passed", "serial": args.serial, "avd": actual_avd,
                           "realEjabberd": True, "realMainActivity": True, "accountRetained": config["first"],
-                          "peerRetained": config["second"], "evidence": str(evidence),
-                          "walletTransactions": 0}, indent=2), flush=True)
+                          "peerRetained": config["second"], "evidence": str(evidence)}, indent=2), flush=True)
     finally:
         private_write(workspace / "finish", "finished")
         if phone is not None and phone.poll() is None:
@@ -245,7 +252,7 @@ def main():
         if peer is not None and peer.poll() is None:
             peer.terminate()
         clean_device_inputs()
-        launch = adb + ["shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity"]
+        launch = adb + ["shell", "am", "start", "-n", f"{PACKAGE}/org.astianx.midori.one.MainActivity"]
         if account_bound:
             launch += ["--es", "chat_peer", config["second"]]
         command(launch,

@@ -131,7 +131,7 @@ class P2pKycTest {
         val tampered = P2pKycJson.record(record); tampered.put("method", "SELFIE")
         assertTrue(runCatching { P2pKycJson.record(tampered) }.isFailure)
     }
-    @Test fun widgetAndReturnValidationRejectForeignHostsExtraParametersAndInjectedCredentials() {
+    @Test fun widgetValidationRejectsForeignHostsExtraParametersAndInjectedCredentials() {
         val f = P2pKycFixture()
         val session = P2pKycSession("a".repeat(64), f.owner, "CO", "https://passport.p2p.cool/embed?handoff=" + "a".repeat(32),
             "https://passport.p2p.cool", f.now + 900)
@@ -140,8 +140,5 @@ class P2pKycTest {
             session.widgetUrl.replace("passport.p2p.cool", "evil.test"), session.widgetUrl.replace("https:", "http:"))) {
             assertTrue(runCatching { validateKycWidget(session.copy(widgetUrl = url)) }.isFailure)
         }
-        assertTrue(isP2pVerificationReturn("midori://p2p/verification"))
-        assertFalse(isP2pVerificationReturn("midori://p2p/verification?code=evil"))
-        assertFalse(isP2pVerificationReturn("midori://p2p/verification/"))
     }
 }

@@ -35,7 +35,7 @@ enum class ThemeMode(val storageValue: String, val labelRes: Int) {
     }
 }
 
-/** Appearance is independent of wallet credentials and survives wallet deletion. */
+/** Appearance preferences are independent of messaging credentials. */
 internal class ThemePreferences(context: Context) {
     private val preferences = context.getSharedPreferences("midori_appearance", Context.MODE_PRIVATE)
     fun load() = ThemeMode.fromStorage(preferences.getString("theme", null))

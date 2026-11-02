@@ -59,7 +59,7 @@ internal class SmackMessenger(
         val jid = JidCreate.entityBareFrom(account.address)
         val config = XMPPTCPConnectionConfiguration.builder()
             .setXmppDomain(jid.domain.toString()).setUsernameAndPassword(jid.localpart, account.password)
-            .setHost(account.host).setPort(account.port).setResource("MiWallet-${UUID.randomUUID().toString().take(8)}")
+            .setHost(account.host).setPort(account.port).setResource("Midori-${UUID.randomUUID().toString().take(8)}")
             .setSecurityMode(ConnectionConfiguration.SecurityMode.required)
             .setCompressionEnabled(false).setConnectTimeout(15_000)
         ChatTls.applyLocalPin(config, account, devCertificatePin)

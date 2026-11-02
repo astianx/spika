@@ -3,20 +3,18 @@ package org.astianx.midori.one
 import android.content.Context
 import androidx.annotation.StringRes
 
-enum class Screen { Welcome, RestoreError, Create, Import, Home, Send, Receive, Funding, Fiat, P2p, Sign, Messaging, Chats, Markets, More, Feature, MarketAsset, Help, Conversation, ChatSecurity, Licenses, GroupDetails, Personalization, ChatAppearance, ConversationAppearance, WalletAppearance, Profile }
+enum class Screen { Welcome, Messaging, Chats, More, Feature, Help, Conversation, ChatSecurity, Licenses, GroupDetails, Personalization, ChatAppearance, ConversationAppearance, Profile }
 
-internal val mainScreens = setOf(Screen.Chats, Screen.Home, Screen.Markets, Screen.More)
+internal val mainScreens = setOf(Screen.Chats, Screen.More)
 
 enum class AppFeature(@StringRes val title: Int, @StringRes val description: Int) {
     CONTACTS(R.string.contacts, R.string.contacts_pending),
     PROFILE(R.string.profile, R.string.profile_pending),
     SCANNER(R.string.scan_qr, R.string.scan_pending),
-    BUY(R.string.wallet_deposit, R.string.funding_intro),
-    ALERTS(R.string.price_alerts, R.string.alerts_pending),
     DESKTOP(R.string.link_desktop, R.string.desktop_pending)
 }
 
-/** Non-secret introduction preference, independent of wallet creation and deletion. */
+/** Non-secret introduction preference, independent of messaging credentials. */
 internal interface AppEntryStore {
     fun hasEntered(): Boolean
     fun markEntered()

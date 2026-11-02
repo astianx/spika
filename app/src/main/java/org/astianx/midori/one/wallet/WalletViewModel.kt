@@ -15,13 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.astianx.midori.one.AppEntryPreferences
-import org.astianx.midori.one.AppEntryStore
-import org.astianx.midori.one.AppFeature
-import org.astianx.midori.one.IntroSlide
-import org.astianx.midori.one.MemoryAppEntryStore
 import org.astianx.midori.one.R
-import org.astianx.midori.one.Screen
 import org.astianx.midori.one.UiText
 import org.json.JSONArray
 import org.json.JSONObject
@@ -86,18 +80,11 @@ data class PendingTx(
 }
 
 data class WalletUiState(
-    val currentScreen: Screen = Screen.Welcome,
-    val introductionPage: Int = 0,
-    val hasEnteredApp: Boolean = false,
-    val feature: AppFeature = AppFeature.CONTACTS,
-    val detailReturnScreen: Screen = Screen.Chats,
-    val marketAsset: Asset = Asset.USDC,
-    val messagingReturnScreen: Screen = Screen.Welcome,
     val seedPhrase: List<String> = emptyList(),
     val importWords: List<String> = List(12) { "" },
     val importError: Boolean = false,
-    val toastMessage: UiText? = null,
-    val toastIsSuccess: Boolean = false,
+    val operationMessage: UiText? = null,
+    val operationSucceeded: Boolean = false,
     val isLoading: Boolean = false,
     val refreshingBalances: Boolean = false,
     val statusText: UiText? = null,
@@ -110,13 +97,9 @@ data class WalletUiState(
     val sendAsset: Asset = Asset.USDC,
     val sendAddress: String = "",
     val sendAmount: String = "",
-    val p2pVerificationRequested: Boolean = false,
-    val p2pVerificationCountry: String = "",
     val sendReview: SendReview? = null,
     val pendingTransactions: List<PendingTx> = emptyList(),
     val receiveAsset: Asset = Asset.USDC,
-    val receiveReturnScreen: Screen = Screen.Home,
-    val fiatReturnScreen: Screen = Screen.Home,
     val fiatOperation: FiatOperation = FiatOperation.BUY,
     val signMessage: String = "",
     val signResult: String? = null,
@@ -131,17 +114,13 @@ class WalletViewModel internal constructor(
     private val clientFactory: () -> WalletClient,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val baseFeeProvider: BaseFeeProvider = HttpBaseFeeProvider(),
-    private val appEntryStore: AppEntryStore = MemoryAppEntryStore(),
     private val clock: () -> Long = System::currentTimeMillis,
     private val countryStore: WalletCountryStore = MemoryWalletCountryStore()
 ) : ViewModel() {
     constructor(context: Context) : this(KeystoreWalletStore(context), { WdkWalletClient(context) },
-        appEntryStore = AppEntryPreferences(context), countryStore = WalletCountryPreferences(context))
+        countryStore = WalletCountryPreferences(context))
 
-    private val _state = MutableStateFlow(WalletUiState(
-        currentScreen = if (appEntryStore.hasEntered()) Screen.Chats else Screen.Welcome,
-        hasEnteredApp = appEntryStore.hasEntered()
-    ))
+    private val _state = MutableStateFlow(WalletUiState())
     val state: StateFlow<WalletUiState> = _state.asStateFlow()
 
     private var wdkCore: WalletClient? = null
@@ -174,12 +153,11 @@ class WalletViewModel internal constructor(
                 encryptedSeed = seed
                 update { copy(isWdkInitialized = true, ethAddress = eth,
                     country = countryStore.country(eth).orEmpty(),
-                    currentScreen = Screen.Chats, hasEnteredApp = true, isLoading = false, statusText = null) }
-                appEntryStore.markEntered()
+                    isLoading = false, statusText = null) }
                 fetchBalance()
             } catch (e: Exception) {
                 discardClient()
-                update { copy(currentScreen = Screen.RestoreError, isWdkInitialized = false,
+                update { copy(isWdkInitialized = false,
                     isLoading = false, statusText = null, restoreError = e.toUiText(R.string.error_restore)) }
             }
         }
@@ -211,53 +189,6 @@ class WalletViewModel internal constructor(
     private fun update(transform: WalletUiState.() -> WalletUiState) {
         _state.update { it.transform() }
     }
-
-    fun navigate(screen: Screen) {
-        if (screen != Screen.Send) dismissSendReview()
-        val destination = when {
-            screen in setOf(Screen.Home, Screen.Send, Screen.Receive, Screen.Funding, Screen.Sign, Screen.Fiat, Screen.P2p) &&
-                !_state.value.isWdkInitialized && walletStore.hasCredentials() -> Screen.RestoreError
-            screen in setOf(Screen.Send, Screen.Receive, Screen.Funding, Screen.Sign, Screen.Fiat, Screen.P2p) && !_state.value.isWdkInitialized -> Screen.Home
-            else -> screen
-        }
-        update { copy(currentScreen = destination,
-            messagingReturnScreen = if (destination == Screen.Messaging && currentScreen != Screen.Messaging)
-                currentScreen else messagingReturnScreen,
-            detailReturnScreen = if (destination == Screen.Help) currentScreen else detailReturnScreen) }
-    }
-
-    fun enterApp() {
-        appEntryStore.markEntered()
-        update { copy(currentScreen = Screen.Chats, hasEnteredApp = true) }
-    }
-
-    fun openFeature(feature: AppFeature) {
-        if (feature == AppFeature.BUY) { openFunding(FiatOperation.BUY); return }
-        update { copy(feature = feature, detailReturnScreen = currentScreen, currentScreen = Screen.Feature) }
-    }
-
-    fun openFiat(operation: FiatOperation) {
-        update { copy(fiatOperation = operation, fiatReturnScreen = if (currentScreen == Screen.Funding) Screen.Funding else Screen.Home) }
-        navigate(Screen.Fiat)
-    }
-
-    fun openFunding(operation: FiatOperation) {
-        update { copy(fiatOperation = operation) }
-        navigate(Screen.Funding)
-    }
-
-    fun openReceive(asset: Asset, returnTo: Screen = Screen.Home) {
-        require(returnTo == Screen.Home || returnTo == Screen.Funding)
-        update { copy(receiveAsset = asset, receiveReturnScreen = returnTo) }
-        navigate(Screen.Receive)
-    }
-
-    internal fun openP2pVerification(country: String = "") {
-        if (!state.value.isWdkInitialized) return
-        update { copy(p2pVerificationRequested = true, p2pVerificationCountry = country) }
-        navigate(Screen.P2p)
-    }
-    internal fun finishP2pVerification() { update { copy(p2pVerificationRequested = false) } }
 
     /** WDK remains the sole signer. Journal callback is durable before this adapter broadcasts. */
     internal fun p2pWalletPort(): P2pWalletPort = object : P2pWalletPort {
@@ -333,28 +264,15 @@ class WalletViewModel internal constructor(
         return signature
     }
 
-    fun openMarketAsset(asset: Asset) {
-        update { copy(marketAsset = asset, currentScreen = Screen.MarketAsset) }
-    }
-
-    fun updateIntroductionPage(page: Int) {
-        if (page in IntroSlide.entries.indices) update { copy(introductionPage = page) }
-    }
-
-    fun showToast(message: UiText, success: Boolean = false) {
-        update { copy(toastMessage = message, toastIsSuccess = success) }
-        viewModelScope.launch {
-            delay(2500)
-            if (_state.value.toastMessage == message) {
-                update { copy(toastMessage = null) }
-            }
-        }
+    /** Legacy financial operation result; never observed by the app host. */
+    private fun reportOperation(message: UiText, success: Boolean = false) {
+        update { copy(operationMessage = message, operationSucceeded = success) }
     }
 
     fun createWallet() {
         if (_state.value.isLoading) return
         if (walletStore.hasCredentials()) {
-            navigate(Screen.RestoreError)
+            update { copy(restoreError = UiText(R.string.error_local_backup)) }
             return
         }
         viewModelScope.launch {
@@ -370,10 +288,10 @@ class WalletViewModel internal constructor(
                     encryptionKey = entropy.encryptionKey
                 )
                 val words = mnemonic.trim().split(" ")
-                update { copy(seedPhrase = words, currentScreen = Screen.Create, isLoading = false, statusText = null) }
+                update { copy(seedPhrase = words, isLoading = false, statusText = null) }
             } catch (e: Exception) {
                 update { copy(isLoading = false, statusText = null) }
-                showToast(e.toUiText(R.string.error_generate))
+                reportOperation(e.toUiText(R.string.error_generate))
             }
         }
     }
@@ -387,7 +305,7 @@ class WalletViewModel internal constructor(
         if (!current.isWdkInitialized || current.country.isNotBlank() || !walletCountryValid(current.pendingCountry)) return
         if (countryStore.bind(current.ethAddress, current.pendingCountry)) {
             update { copy(country = countryStore.country(ethAddress).orEmpty()) }
-        } else showToast(UiText(R.string.error_country))
+        } else reportOperation(UiText(R.string.error_country))
     }
 
     private fun bindWalletCountry(address: String): String =
@@ -396,7 +314,7 @@ class WalletViewModel internal constructor(
     fun confirmSeedAndInitialize() {
         if (_state.value.isLoading) return
         if (!walletCountryValid(_state.value.pendingCountry)) {
-            showToast(UiText(R.string.country_required))
+            reportOperation(UiText(R.string.country_required))
             return
         }
         viewModelScope.launch {
@@ -406,13 +324,12 @@ class WalletViewModel internal constructor(
                 saveCredentials(encryptionKey, encryptedSeed)
                 val boundCountry = bindWalletCountry(eth)
                 update { copy(isWdkInitialized = true, ethAddress = eth, country = boundCountry,
-                    seedPhrase = emptyList(), currentScreen = Screen.Chats, hasEnteredApp = true, isLoading = false, statusText = null) }
-                appEntryStore.markEntered()
+                    seedPhrase = emptyList(), isLoading = false, statusText = null) }
                 fetchBalance()
             } catch (e: Exception) {
                 discardClient()
                 update { copy(isLoading = false, statusText = null) }
-                showToast(e.toUiText(R.string.error_initialize))
+                reportOperation(e.toUiText(R.string.error_initialize))
             }
         }
     }
@@ -441,7 +358,7 @@ class WalletViewModel internal constructor(
             return
         }
         if (!walletCountryValid(_state.value.pendingCountry)) {
-            showToast(UiText(R.string.country_required))
+            reportOperation(UiText(R.string.country_required))
             return
         }
         update { copy(importError = false) }
@@ -458,14 +375,13 @@ class WalletViewModel internal constructor(
                 encryptedSeed = result.encryptedSeedBuffer
                 val boundCountry = bindWalletCountry(eth)
                 update { copy(isWdkInitialized = true, ethAddress = eth, country = boundCountry,
-                    importWords = List(12) { "" }, currentScreen = Screen.Chats, hasEnteredApp = true,
+                    importWords = List(12) { "" },
                     isLoading = false, statusText = null, restoreError = null) }
-                appEntryStore.markEntered()
                 fetchBalance()
             } catch (e: Exception) {
                 discardClient()
                 update { copy(isLoading = false, statusText = null) }
-                showToast(e.toUiText(R.string.error_import))
+                reportOperation(e.toUiText(R.string.error_import))
             }
         }
     }
@@ -545,44 +461,44 @@ class WalletViewModel internal constructor(
         val address = s.sendAddress.trim()
         val amount = s.sendAmount.trim()
         if (address.isEmpty() || amount.isEmpty()) {
-            showToast(UiText(R.string.error_send_fields))
+            reportOperation(UiText(R.string.error_send_fields))
             return null
         }
         if (!s.isWdkInitialized || wdkCore == null) {
-            showToast(UiText(R.string.error_not_initialized))
+            reportOperation(UiText(R.string.error_not_initialized))
             return null
         }
 
         val asset = s.sendAsset
         if (!asset.isAvailable) {
-            showToast(asset.unavailableReason ?: UiText(R.string.error_asset_unavailable))
+            reportOperation(asset.unavailableReason ?: UiText(R.string.error_asset_unavailable))
             return null
         }
         val valueInSmallestUnit = toSmallestUnit(amount, asset.decimals) ?: run {
-            showToast(UiText(R.string.error_amount))
+            reportOperation(UiText(R.string.error_amount))
             return null
         }
         if (address.startsWith("@")) {
-            showToast(UiText(R.string.dollars_tag_pending))
+            reportOperation(UiText(R.string.dollars_tag_pending))
             return null
         }
         if (!address.matches(Regex("0x[a-fA-F0-9]{40}"))) {
-            showToast(UiText(R.string.error_base_address))
+            reportOperation(UiText(R.string.error_base_address))
             return null
         }
         if (address.equals("0x0000000000000000000000000000000000000000", ignoreCase = true)) {
-            showToast(UiText(R.string.error_zero_address))
+            reportOperation(UiText(R.string.error_zero_address))
             return null
         }
         val balance = s.tokenBalances[asset]?.toBigIntegerOrNull()
         if (balance == null) {
-            showToast(UiText(R.string.error_balance_unavailable, listOf(asset.name)))
+            reportOperation(UiText(R.string.error_balance_unavailable, listOf(asset.name)))
             return null
         }
         if (valueInSmallestUnit.toBigInteger() > balance) {
             val conversion = DigitalDollarAccount.funding(
                 valueInSmallestUnit.toBigInteger(), asset, s.tokenBalances) == DollarFunding.CONVERSION_REQUIRED
-            showToast(if (conversion) UiText(R.string.dollars_conversion_required)
+            reportOperation(if (conversion) UiText(R.string.dollars_conversion_required)
                 else UiText(R.string.error_balance_insufficient, listOf(asset.name)))
             return null
         }
@@ -625,10 +541,10 @@ class WalletViewModel internal constructor(
                 if (sendRevision == revision) {
                     update { copy(sendAmount = BigDecimal(e.maxAmount).movePointLeft(s.sendAsset.decimals)
                         .stripTrailingZeros().toPlainString()) }
-                    showToast(UiText(R.string.send_amount_adjusted))
+                    reportOperation(UiText(R.string.send_amount_adjusted))
                 }
             } catch (e: Exception) {
-                showToast(e.toUiText(R.string.error_prepare_transfer))
+                reportOperation(e.toUiText(R.string.error_prepare_transfer))
             } finally { update { copy(isLoading = false) } }
         }
     }
@@ -639,7 +555,7 @@ class WalletViewModel internal constructor(
         val review = s.sendReview
         if (review == null || !review.matches(s.sendAsset, s.sendAddress, s.sendAmount, clock())) {
             dismissSendReview()
-            showToast(UiText(R.string.send_review_expired))
+            reportOperation(UiText(R.string.send_review_expired))
             return
         }
         val valueInSmallestUnit = validateSend(s) ?: run { dismissSendReview(); return }
@@ -673,15 +589,15 @@ class WalletViewModel internal constructor(
                 updateTx(txId, TxStatus.BROADCAST, userOperation = hash)
                 trackUserOperation(txId, hash)
                 update { copy(sendAddress = "", sendAmount = "") }
-                showToast(UiText(R.string.broadcast_notice), success = true)
+                reportOperation(UiText(R.string.broadcast_notice), success = true)
                 fetchBalance()
             } catch (e: Exception) {
                 if (submissionStarted) {
                     updateTx(txId, TxStatus.UNKNOWN, error = UiText(R.string.unknown_submission_notice))
-                    showToast(UiText(R.string.unknown_submission_notice))
+                    reportOperation(UiText(R.string.unknown_submission_notice))
                 } else {
                     updateTx(txId, TxStatus.FAILED_BEFORE_BROADCAST, error = e.toUiText(R.string.error_prepare_transfer))
-                    showToast(e.toUiText(R.string.error_prepare_transfer))
+                    reportOperation(e.toUiText(R.string.error_prepare_transfer))
                 }
             } finally {
                 update { copy(isLoading = false, statusText = null, sendReview = null) }
@@ -735,7 +651,7 @@ class WalletViewModel internal constructor(
         val message = _state.value.signMessage.trim()
         if (message.isEmpty()) return
         if (!_state.value.isWdkInitialized || wdkCore == null) {
-            showToast(UiText(R.string.error_not_initialized))
+            reportOperation(UiText(R.string.error_not_initialized))
             return
         }
         update { copy(verifyResult = null) }
@@ -750,11 +666,11 @@ class WalletViewModel internal constructor(
                     accountIndex = 0,
                     args = jsonEncodeString(message)
                 )
-                update { copy(signResult = result.toString(), currentScreen = Screen.Sign, isLoading = false, statusText = null) }
-                showToast(UiText(R.string.message_signed), success = true)
+                update { copy(signResult = result.toString(), isLoading = false, statusText = null) }
+                reportOperation(UiText(R.string.message_signed), success = true)
             } catch (e: Exception) {
                 update { copy(isLoading = false, statusText = null) }
-                showToast(e.toUiText(R.string.error_sign))
+                reportOperation(e.toUiText(R.string.error_sign))
             }
         }
     }
@@ -764,7 +680,7 @@ class WalletViewModel internal constructor(
         val message = _state.value.signMessage.trim()
         if (message.isEmpty()) return
         if (!_state.value.isWdkInitialized || wdkCore == null) {
-            showToast(UiText(R.string.error_not_initialized))
+            reportOperation(UiText(R.string.error_not_initialized))
             return
         }
 
@@ -784,10 +700,10 @@ class WalletViewModel internal constructor(
                 )
                 val valid = isValidVerificationResult(result)
                 update { copy(verifyResult = valid, isLoading = false, statusText = null) }
-                showToast(UiText(if (valid) R.string.signature_valid else R.string.signature_invalid), success = valid)
+                reportOperation(UiText(if (valid) R.string.signature_valid else R.string.signature_invalid), success = valid)
             } catch (e: Exception) {
                 update { copy(verifyResult = false, isLoading = false, statusText = null) }
-                showToast(e.toUiText(R.string.error_verify))
+                reportOperation(e.toUiText(R.string.error_verify))
             }
         }
     }
@@ -798,7 +714,7 @@ class WalletViewModel internal constructor(
             try {
                 withContext(ioDispatcher) { clearCredentials() }
             } catch (e: Exception) {
-                showToast(e.toUiText(R.string.error_delete_wallet))
+                reportOperation(e.toUiText(R.string.error_delete_wallet))
                 return@launch
             }
             try { wdkCore?.dispose() } catch (_: Exception) {}
@@ -807,9 +723,9 @@ class WalletViewModel internal constructor(
             encryptionKey = ""
             encryptedSeed = ""
             update {
-                WalletUiState(currentScreen = Screen.Chats, hasEnteredApp = true)
+                WalletUiState()
             }
-            showToast(UiText(R.string.wallet_deleted))
+            reportOperation(UiText(R.string.wallet_deleted))
             withContext(ioDispatcher) {
                 try { old?.close() } catch (_: Exception) {}
             }

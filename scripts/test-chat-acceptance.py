@@ -21,10 +21,10 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location("walletdev", ROOT / "scripts/test-wallet-device.py")
-walletdev = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(walletdev)
-PACKAGE = walletdev.PACKAGE
+spec = importlib.util.spec_from_file_location("chatdev", ROOT / "scripts/chat-device.py")
+chatdev = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(chatdev)
+PACKAGE = chatdev.PACKAGE
 
 
 def local_property(name):
@@ -128,7 +128,7 @@ class Agent:
                 self.process.terminate()
 
 
-class Phone(walletdev.Device):
+class Phone(chatdev.Device):
     def tap_node(self, node):
         self.shell("input", "tap", str(node["x"]), str(node["y"]))
         time.sleep(1)
@@ -243,7 +243,7 @@ def peer_name(agent):
 
 def open_peer(phone, agent):
     """Open the conversation the way a notification does: through the app's own peer intent."""
-    phone.shell("am", "start", "-n", f"{PACKAGE}/.MainActivity", "--es", "chat_peer", agent.account)
+    phone.shell("am", "start", "-n", f"{PACKAGE}/org.astianx.midori.one.MainActivity", "--es", "chat_peer", agent.account)
     time.sleep(3)
     phone.wait(phone.s("chat_options"), 30, exact=True)
 
@@ -491,7 +491,7 @@ def scenario_background(phone, agent, report, out):
     time.sleep(25)
     report["forceStopNotified"] = notifications() > base
     check(report, "after a force-stop no delivery is promised and none happens (documented limit)", not report["forceStopNotified"])
-    phone.shell("am", "start", "-n", f"{PACKAGE}/.MainActivity")
+    phone.shell("am", "start", "-n", f"{PACKAGE}/org.astianx.midori.one.MainActivity")
 
 
 def ejabberd(*args, check=True):
@@ -796,7 +796,8 @@ def scenario_document(phone, agent, report, out):
     ensure_verified(phone, agent, report, out)
     run = secrets.token_hex(3)
     source = Path(out) / "original-source.png"
-    source.write_bytes((ROOT / "docs/evidence/2026-10-22-v0.1-wallet-device/matrix/pt-13-review.png").read_bytes() + secrets.token_bytes(64))
+    phone.screenshot(out, "document-fixture")
+    source.write_bytes((Path(out) / "document-fixture.png").read_bytes() + secrets.token_bytes(64))
     import hashlib
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     name = f"midori-original-{run}.png"

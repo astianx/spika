@@ -19,16 +19,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.astianx.midori.one.chat.ChatViewModel
-import org.astianx.midori.one.wallet.LocalWalletAppearance
-import org.astianx.midori.one.wallet.LocalWalletAppearanceChange
 
 @Composable
 internal fun PersonalizationScreen(chat: ChatViewModel, themeMode: ThemeMode, onThemeChange: (ThemeMode) -> Unit,
     onStyleChange: (AppStyle) -> Unit, navigate: (Screen) -> Unit) {
     val context = LocalContext.current
     val app = LocalAppStyle.current
-    val wallet = LocalWalletAppearance.current
-    val changeWallet = LocalWalletAppearanceChange.current
     val chats by chat.state.collectAsState()
     val scope = rememberCoroutineScope()
     var launcher by remember { mutableStateOf(LauncherIcons.current(context)) }
@@ -38,7 +34,7 @@ internal fun PersonalizationScreen(chat: ChatViewModel, themeMode: ThemeMode, on
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) scope.launch {
             working = true
-            val bundle = ThemeBundle(app, chats.appearance, wallet).encode()
+            val bundle = ThemeBundle(app, chats.appearance).encode()
             message = try {
                 withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(bundle.toByteArray()) } }
                 R.string.style_exported
@@ -58,7 +54,7 @@ internal fun PersonalizationScreen(chat: ChatViewModel, themeMode: ThemeMode, on
                 chat.clearError()
                 chat.setAppearance(bundle.chats).join()
                 if (chat.state.value.error != null) error("Cannot persist appearance")
-                onStyleChange(bundle.app); changeWallet(bundle.wallet)
+                onStyleChange(bundle.app)
                 R.string.style_imported
             } catch (_: Exception) { R.string.style_file_error }
             message?.let { android.widget.Toast.makeText(context, context.getString(it), android.widget.Toast.LENGTH_LONG).show() }
@@ -96,7 +92,6 @@ internal fun PersonalizationScreen(chat: ChatViewModel, themeMode: ThemeMode, on
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         HorizontalDivider()
         ShortcutRow(Icons.Outlined.ChatBubbleOutline, stringResource(R.string.style_chats), stringResource(R.string.style_chats_summary), { navigate(Screen.ChatAppearance) })
-        ShortcutRow(Icons.Outlined.AccountBalanceWallet, stringResource(R.string.style_wallet), stringResource(R.string.style_wallet_summary), { navigate(Screen.WalletAppearance) })
         HorizontalDivider()
         Text(stringResource(R.string.style_portable_hint), style = MaterialTheme.typography.bodySmall)
         OutlinedButton({ export.launch("midori-theme.json") }, enabled = !working, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.style_export)) }

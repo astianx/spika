@@ -90,7 +90,7 @@ class ChatConnectionService : Service() {
     companion object {
         private const val CHANNEL = "chat_connection"
         private const val ID = 4812
-        const val OPEN_CONNECTION = "org.astianx.midori.one.CONNECTION"
+        const val OPEN_CONNECTION = "org.astianspika.android.CONNECTION"
         // Only called while the activity is STARTED; never from network callbacks or a boot receiver.
         fun start(context: Context): Boolean = runCatching {
             ContextCompat.startForegroundService(context, Intent(context, ChatConnectionService::class.java))

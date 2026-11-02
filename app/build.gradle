@@ -55,7 +55,7 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId "org.astianx.midori.one"
+        applicationId "org.astianspika.android"
         minSdk 33
         targetSdk 35
         versionCode 2

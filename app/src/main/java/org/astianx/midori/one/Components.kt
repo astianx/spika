@@ -1,6 +1,5 @@
 package org.astianx.midori.one
 
-import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -32,7 +31,6 @@ import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -179,19 +177,18 @@ fun OutlineActionButton(title: String, onClick: () -> Unit) {
 }
 
 internal enum class IntroSlide(
-    @DrawableRes val artwork: Int,
     @StringRes val imageDescription: Int,
     @StringRes val title: Int,
     @StringRes val body: Int,
     @StringRes val tag: Int
 ) {
-    INTRO(R.drawable.onboarding_intro, R.string.onboarding_intro_image,
+    INTRO(R.string.onboarding_intro_image,
         R.string.onboarding_intro_title, R.string.onboarding_intro_body, R.string.brand_name),
-    ASSETS(R.drawable.onboarding_assets, R.string.onboarding_assets_image,
-        R.string.onboarding_assets_title, R.string.onboarding_assets_body, R.string.wallet),
-    RECOVERY(R.drawable.onboarding_recovery, R.string.onboarding_recovery_image,
-        R.string.onboarding_recovery_title, R.string.onboarding_recovery_body, R.string.recovery_phrase),
-    MESSAGING(R.drawable.onboarding_messaging, R.string.onboarding_messaging_image,
+    CONTACTS(R.string.onboarding_contacts_image,
+        R.string.onboarding_contacts_title, R.string.onboarding_contacts_body, R.string.contacts),
+    PRIVACY(R.string.onboarding_privacy_image,
+        R.string.onboarding_privacy_title, R.string.onboarding_privacy_body, R.string.chat_privacy),
+    MESSAGING(R.string.onboarding_messaging_image,
         R.string.onboarding_messaging_title, R.string.onboarding_messaging_body, R.string.messaging)
 }
 
@@ -199,8 +196,8 @@ internal enum class IntroSlide(
 internal fun OnboardingArtwork(slide: IntroSlide, modifier: Modifier = Modifier) {
     val icon = when (slide) {
         IntroSlide.INTRO -> Icons.AutoMirrored.Outlined.Chat
-        IntroSlide.ASSETS -> Icons.Outlined.AccountBalanceWallet
-        IntroSlide.RECOVERY -> Icons.Outlined.Key
+        IntroSlide.CONTACTS -> Icons.Outlined.PeopleOutline
+        IntroSlide.PRIVACY -> Icons.Outlined.VerifiedUser
         IntroSlide.MESSAGING -> Icons.Outlined.Lock
     }
     Box(modifier, contentAlignment = Alignment.Center) {
@@ -252,9 +249,7 @@ internal fun OnboardingControls(slides: List<IntroSlide>, selected: Int, enabled
 fun AppNavigation(selected: Screen, onNavigate: (Screen) -> Unit, unread: Int = 0) {
     val destinations = listOf(
         Triple(Screen.Chats, R.string.chats, Icons.AutoMirrored.Outlined.Chat),
-        Triple(Screen.Home, R.string.wallet, Icons.Outlined.AccountBalanceWallet),
-        Triple(Screen.Markets, R.string.markets, Icons.Outlined.BarChart),
-        Triple(Screen.More, R.string.more, Icons.Outlined.MoreHoriz)
+        Triple(Screen.More, R.string.more, Icons.Outlined.Settings)
     )
     Column(Modifier.background(MaterialTheme.colorScheme.surface)) {
         Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
@@ -355,8 +350,6 @@ internal fun featureIcon(feature: AppFeature): ImageVector = when (feature) {
     AppFeature.CONTACTS -> Icons.Outlined.People
     AppFeature.PROFILE -> Icons.Outlined.AccountCircle
     AppFeature.SCANNER -> Icons.Outlined.QrCodeScanner
-    AppFeature.BUY -> Icons.Outlined.Payments
-    AppFeature.ALERTS -> Icons.Outlined.NotificationsNone
     AppFeature.DESKTOP -> Icons.Outlined.Computer
 }
 

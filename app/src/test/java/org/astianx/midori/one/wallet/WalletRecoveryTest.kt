@@ -15,10 +15,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.astianx.midori.one.AppFeature
-import org.astianx.midori.one.MemoryAppEntryStore
 import org.astianx.midori.one.R
-import org.astianx.midori.one.Screen
 import org.astianx.midori.one.UiText
 import org.junit.After
 import org.junit.Assert.*
@@ -223,7 +220,6 @@ class WalletRecoveryTest {
         var clients = 0
         val vm = viewModel(store) { if (clients++ == 0) failed else recovered }
         advanceUntilIdle()
-        assertEquals(Screen.RestoreError, vm.state.value.currentScreen)
         // SDK prose is not cached in the UI; this resolves in the current locale.
         assertEquals(UiText(R.string.error_restore), vm.state.value.restoreError)
         assertEquals(original, store.credentials)
@@ -231,7 +227,6 @@ class WalletRecoveryTest {
         assertTrue(failed.closed)
         vm.restoreWallet()
         advanceUntilIdle()
-        assertEquals(Screen.Chats, vm.state.value.currentScreen)
         assertTrue(vm.state.value.isWdkInitialized)
         assertEquals(original, store.credentials)
         assertEquals(0, store.saves)
@@ -244,19 +239,16 @@ class WalletRecoveryTest {
         val store = Store()
         var fail = true
         val vm = viewModel(store) { Client().apply { failImport = fail } }
-        vm.navigate(Screen.Import)
         vm.selectCountry("CO")
         // Artificial words are consumed by a fake, never by a real wallet.
         vm.pasteImportWords(List(12) { "invalid" }.joinToString(" "))
         vm.doImport()
         advanceUntilIdle()
-        assertEquals(Screen.Import, vm.state.value.currentScreen)
         assertNull(store.credentials)
         assertEquals(0, store.saves)
         fail = false
         vm.doImport()
         advanceUntilIdle()
-        assertEquals(Screen.Chats, vm.state.value.currentScreen)
         assertEquals(1, store.saves)
         assertTrue(vm.state.value.importWords.all { it.isEmpty() })
     }
@@ -265,19 +257,16 @@ class WalletRecoveryTest {
     fun importRequiresACountryAndBindsItToTheWallet() = runTest(dispatcher) {
         val store = Store()
         val vm = viewModel(store) { Client() }
-        vm.navigate(Screen.Import)
         vm.pasteImportWords(List(12) { "word" }.joinToString(" "))
         vm.doImport()
-        assertEquals(UiText(R.string.country_required), vm.state.value.toastMessage)
+        assertEquals(UiText(R.string.country_required), vm.state.value.operationMessage)
         advanceUntilIdle()
-        assertEquals(Screen.Import, vm.state.value.currentScreen)
         assertNull(store.credentials)
         vm.selectCountry("not-a-country")
         assertEquals("", vm.state.value.pendingCountry)
         vm.selectCountry("BR")
         vm.doImport()
         advanceUntilIdle()
-        assertEquals(Screen.Chats, vm.state.value.currentScreen)
         assertEquals("BR", vm.state.value.country)
         assertNotNull(store.credentials)
     }
@@ -331,7 +320,6 @@ class WalletRecoveryTest {
         client.failBalance = true
         vm.fetchBalance()
         advanceUntilIdle()
-        assertEquals(Screen.Chats, vm.state.value.currentScreen)
         assertNull(vm.state.value.usdcBalance)
         assertNull(vm.state.value.usdtBalance)
         assertNotNull(store.credentials)
@@ -344,12 +332,10 @@ class WalletRecoveryTest {
         val store = Store(original)
         val vm = viewModel(store) { Client().apply { failInitialization = true; failImport = true } }
         advanceUntilIdle()
-        vm.navigate(Screen.Import)
         vm.selectCountry("CO")
         vm.pasteImportWords(List(12) { "invalid" }.joinToString(" "))
         vm.doImport()
         advanceUntilIdle()
-        assertEquals(Screen.Import, vm.state.value.currentScreen)
         assertEquals(original, store.credentials)
         assertEquals(0, store.saves)
         assertEquals(0, store.clears)
@@ -456,7 +442,7 @@ class WalletRecoveryTest {
         vm.prepareSend()
         runCurrent()
         assertNull("The user reviews the adjusted amount, never a silent one", vm.state.value.sendReview)
-        assertEquals(UiText(R.string.send_amount_adjusted), vm.state.value.toastMessage)
+        assertEquals(UiText(R.string.send_amount_adjusted), vm.state.value.operationMessage)
         // Fee 3000 plus a 15% margin (450) is left out of the balance.
         assertEquals("19.99655", vm.state.value.sendAmount)
         assertEquals(listOf("19500000"), client.quotedAmounts)
@@ -480,7 +466,7 @@ class WalletRecoveryTest {
         vm.prepareSend()
         runCurrent()
         assertNull(vm.state.value.sendReview)
-        assertEquals(UiText(R.string.error_insufficient_fee_token), vm.state.value.toastMessage)
+        assertEquals(UiText(R.string.error_insufficient_fee_token), vm.state.value.operationMessage)
         assertEquals("0.003", vm.state.value.sendAmount)
         assertEquals(0, client.broadcasts)
     }
@@ -514,7 +500,7 @@ class WalletRecoveryTest {
         vm.prepareSend()
         runCurrent()
         assertNull(vm.state.value.sendReview)
-        assertEquals(UiText(R.string.error_fee_too_high), vm.state.value.toastMessage)
+        assertEquals(UiText(R.string.error_fee_too_high), vm.state.value.operationMessage)
     }
 
     @Test
@@ -543,7 +529,7 @@ class WalletRecoveryTest {
         vm.prepareSend()
         runCurrent()
         assertNull(vm.state.value.sendReview)
-        assertEquals(UiText(R.string.error_gasless_account), vm.state.value.toastMessage)
+        assertEquals(UiText(R.string.error_gasless_account), vm.state.value.operationMessage)
         assertTrue(client.quotedFeeTokens.isEmpty())
         assertEquals(0, client.broadcasts)
     }
@@ -553,13 +539,11 @@ class WalletRecoveryTest {
         val store = Store(WalletCredentials("test-key", "test-seed")).apply { failLoad = true }
         val vm = viewModel(store) { Client() }
         advanceUntilIdle()
-        assertEquals(Screen.RestoreError, vm.state.value.currentScreen)
         assertEquals(0, store.clears)
         assertNotNull(store.credentials)
         store.failLoad = false
         vm.restoreWallet()
         advanceUntilIdle()
-        assertEquals(Screen.Chats, vm.state.value.currentScreen)
     }
 
     @Test
@@ -593,7 +577,7 @@ class WalletRecoveryTest {
         vm.updateSendAddress("0x" + "2".repeat(40))
         vm.updateSendAmount("1")
         vm.prepareSend()
-        assertEquals(UiText(R.string.dollars_conversion_required), vm.state.value.toastMessage)
+        assertEquals(UiText(R.string.dollars_conversion_required), vm.state.value.operationMessage)
         assertNull(vm.state.value.sendReview)
         advanceUntilIdle()
         assertEquals(0, client.broadcasts)
@@ -609,64 +593,10 @@ class WalletRecoveryTest {
         advanceUntilIdle()
         vm.deleteWallet()
         runCurrent()
-        assertEquals(UiText(R.string.error_delete_wallet), vm.state.value.toastMessage)
+        assertEquals(UiText(R.string.error_delete_wallet), vm.state.value.operationMessage)
         assertEquals(original, store.credentials)
         assertTrue(vm.state.value.isWdkInitialized)
-        assertEquals(Screen.Chats, vm.state.value.currentScreen)
         assertFalse(client.closed)
-    }
-
-    @Test
-    fun introductionCanOpenChatsWithoutCreatingWalletAndSurvivesRestart() = runTest(dispatcher) {
-        val entry = MemoryAppEntryStore()
-        val store = Store()
-        var clients = 0
-        val vm = WalletViewModel(store, { clients++; Client() }, dispatcher, appEntryStore = entry)
-        viewModels.put("first-entry", vm)
-        assertEquals(Screen.Welcome, vm.state.value.currentScreen)
-        vm.enterApp()
-        assertEquals(Screen.Chats, vm.state.value.currentScreen)
-        assertTrue(entry.hasEntered())
-        assertEquals(0, clients)
-        assertEquals(0, store.saves)
-        assertNull(store.credentials)
-        val restarted = WalletViewModel(store, { clients++; Client() }, dispatcher, appEntryStore = entry)
-        viewModels.put("restarted-entry", restarted)
-        assertEquals(Screen.Chats, restarted.state.value.currentScreen)
-        assertEquals(0, clients)
-    }
-
-    @Test
-    fun mainNavigationNeverOpensFinancialActionsWithoutAnInitializedWallet() = runTest(dispatcher) {
-        val empty = viewModel(Store()) { Client() }
-        empty.enterApp()
-        for (destination in listOf(Screen.Send, Screen.Receive, Screen.Sign)) {
-            empty.navigate(destination)
-            assertEquals(Screen.Home, empty.state.value.currentScreen)
-        }
-        val saved = Store(WalletCredentials("key", "seed"))
-        val failed = viewModel(saved) { Client().apply { failInitialization = true } }
-        advanceUntilIdle()
-        failed.enterApp()
-        assertEquals(Screen.Chats, failed.state.value.currentScreen)
-        failed.navigate(Screen.Home)
-        assertEquals(Screen.RestoreError, failed.state.value.currentScreen)
-        assertNotNull(saved.credentials)
-        assertEquals(0, saved.clears)
-    }
-
-    @Test
-    fun nestedMessagingDetailsReturnToTheFeatureAndOriginalTab() = runTest(dispatcher) {
-        val vm = viewModel(Store()) { Client() }
-        vm.enterApp()
-        vm.navigate(Screen.More)
-        vm.openFeature(AppFeature.PROFILE)
-        vm.navigate(Screen.Messaging)
-        assertEquals(Screen.Feature, vm.state.value.messagingReturnScreen)
-        vm.navigate(vm.state.value.messagingReturnScreen)
-        assertEquals(AppFeature.PROFILE, vm.state.value.feature)
-        vm.navigate(vm.state.value.detailReturnScreen)
-        assertEquals(Screen.More, vm.state.value.currentScreen)
     }
 
 }

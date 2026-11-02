@@ -6,7 +6,6 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
-import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -15,7 +14,6 @@ import kotlinx.coroutines.runBlocking
 import org.astianx.midori.one.BuildConfig
 import org.astianx.midori.one.MainActivity
 import org.astianx.midori.one.R
-import org.astianx.midori.one.wallet.WalletViewModel
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -26,14 +24,13 @@ import org.junit.runner.RunWith
 /**
  * Explicit opt-in REAL UI/server acceptance. Runs MainActivity and its normal chat vault.
  * A separate JVM peer talks to ejabberd; no invented contacts, messages or balances.
- * Never creates/imports/deletes a wallet, reads its recovery words or sends funds.
  * Refuses to replace an existing chat account. The new lab account remains signed in.
  */
 @RunWith(AndroidJUnit4::class)
 class LiveChatUiDeviceTest {
     @get:Rule val compose = createEmptyComposeRule()
 
-    @Test fun realConversationAndWalletNavigation() {
+    @Test fun realConversationAndAppNavigation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val configuration = File(context.filesDir, "chat-live-ui.json")
@@ -66,12 +63,6 @@ class LiveChatUiDeviceTest {
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         try {
             compose.waitForIdle()
-            lateinit var wallet: WalletViewModel
-            scenario.onActivity { wallet = ViewModelProvider(it)[WalletViewModel::class.java] }
-            // Restoration may complete by navigating back to Chats. Wait for that normal
-            // startup flow before the test starts interacting with account/conversation UI.
-            await("normal wallet startup, without modifying it") { !wallet.state.value.isLoading }
-            check(wallet.state.value.restoreError == null) { "Existing wallet recovery failed; preserve it and stop UI acceptance" }
             val started = compose.onAllNodesWithText(context.getString(R.string.get_started))
             if (started.fetchSemanticsNodes().isNotEmpty()) started.onFirst().performClick()
             val goChats = compose.onAllNodes(hasText(context.getString(R.string.chats)) and isSelectable())
@@ -79,7 +70,15 @@ class LiveChatUiDeviceTest {
 
             if (chat.state.value.account.isBlank()) {
                 compose.onNodeWithText(context.getString(R.string.chat_connect)).performClick()
-                compose.onNode(hasText(context.getString(R.string.chat_account_address)) and hasSetTextAction()).assertExists()
+                compose.waitUntil(10_000) {
+                    compose.onAllNodesWithText(context.getString(R.string.chat_account_title)).fetchSemanticsNodes().isNotEmpty()
+                }
+                val haveAccount = compose.onAllNodesWithText(context.getString(R.string.chat_pilot_have_account))
+                if (haveAccount.fetchSemanticsNodes().isNotEmpty()) haveAccount.onFirst().performScrollTo().performClick()
+                compose.waitUntil(10_000) {
+                    compose.onAllNodes(hasText(context.getString(R.string.chat_account_address)) and hasSetTextAction())
+                        .fetchSemanticsNodes().isNotEmpty()
+                }
                 // Keep the password out of text selectors and assertion-failure UI dumps. This
                 // invokes the same real authentication/persistence path as the form's action.
                 runBlocking { chat.connect(first, config.getString("password"), "10.0.2.2", "5222").join() }
@@ -172,14 +171,15 @@ class LiveChatUiDeviceTest {
                 compose.onNodeWithContentDescription(context.getString(R.string.back)).performClick()
             }
 
-            // These are the user's normal screens and genuine wallet state. No wallet
-            // action (create/import/delete/sign/submit), clipboard or recovery word access.
-            compose.onNode(hasText(context.getString(R.string.wallet)) and isSelectable()).performClick()
-            compose.waitForIdle()
-            capture("wallet")
             compose.onNode(hasText(context.getString(R.string.more)) and isSelectable()).performClick()
             compose.waitForIdle()
             capture("settings")
+            compose.onNodeWithContentDescription(context.getString(R.string.profile)).performClick()
+            compose.onNodeWithText(context.getString(R.string.profile_show_qr)).performScrollTo().performClick()
+            compose.onNodeWithContentDescription(context.getString(R.string.profile_contact_qr)).assertIsDisplayed()
+            capture("own-contact-qr")
+            compose.onNodeWithText(context.getString(R.string.close)).performSemanticsAction(SemanticsActions.OnClick) { action -> assertTrue(action()) }
+            compose.onNodeWithContentDescription(context.getString(R.string.back)).performClick()
             compose.onNode(hasText(context.getString(R.string.chats)) and isSelectable()).performClick()
             compose.onNodeWithTag("chat-row-$second").performClick()
             compose.waitUntil(10_000) {
@@ -193,11 +193,12 @@ class LiveChatUiDeviceTest {
                 .put("server", "localhost:5222 via STARTTLS with inspected pin")
                 .put("account", first).put("peer", second).put("outgoingId", outgoing.id)
                 .put("encryptedReply", true).put("deliveryReceipt", true)
+                .put("profileContactQr", true)
                 .put("chatList", chatList)
                 .put("richChat", richChat ?: JSONObject.NULL)
-                .put("wallet", "normal UI read only; no credentials or financial actions accessed by test")
                 .put("accountRetained", true).toString(2))
         } catch (failure: Throwable) {
+            println("LIVE_UI_FAILURE: ${failure.javaClass.simpleName}: ${failure.message}")
             // Preserve the real failing screen before ActivityScenario/runner cleanup.
             // Screenshot failures must never replace the original assertion or error.
             runCatching { writeScreenshot("failure") }

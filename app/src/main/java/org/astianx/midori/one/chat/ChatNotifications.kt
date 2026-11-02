@@ -26,7 +26,7 @@ internal class ChatNotifications(private val context: Context) {
         // Data, unlike extras, participates in PendingIntent identity. Hash collisions must not open another peer.
         val intent = Intent(context, MainActivity::class.java).putExtra(PEER_EXTRA, message.peer)
             .setData(Uri.Builder().scheme("midori").authority("chat").appendPath(message.peer).build())
-            .setAction("org.astianx.midori.one.OPEN_CHAT")
+            .setAction("${context.packageName}.OPEN_CHAT")
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val pending = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         // The serialized chat state owns counts; asynchronous system posting cannot lose a burst.
@@ -64,7 +64,7 @@ internal class ChatNotifications(private val context: Context) {
             return
         }
         val pending = PendingIntent.getActivity(context, 1, Intent(context, MainActivity::class.java)
-            .setAction("org.astianx.midori.one.OPEN_MESSAGES")
+            .setAction(OPEN_MESSAGES)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         manager.notify(SUMMARY_TAG, CHILD_ID, builder()
@@ -73,6 +73,7 @@ internal class ChatNotifications(private val context: Context) {
     }
 
     companion object {
+        const val OPEN_MESSAGES = "org.astianspika.android.OPEN_MESSAGES"
         const val PEER_EXTRA = "chat_peer"
         private const val CHANNEL = "private_messages"
         private const val GROUP = "midori_private_chats"

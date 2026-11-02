@@ -27,11 +27,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -41,18 +38,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,8 +53,6 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import org.astianx.midori.one.chat.label
 import org.astianx.midori.one.chat.ChatViewModel
-import org.astianx.midori.one.wallet.Asset
-import org.astianx.midori.one.wallet.WalletViewModel
 
 @Composable
 fun BrandSplashScreen() {
@@ -82,12 +72,12 @@ fun BrandSplashScreen() {
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun WelcomeScreen(vm: WalletViewModel, themeMode: ThemeMode, onThemeChange: (ThemeMode) -> Unit) {
+fun WelcomeScreen(vm: AppViewModel, themeMode: ThemeMode, onThemeChange: (ThemeMode) -> Unit) {
     val s by vm.state.collectAsState()
+    BackHandler(enabled = s.hasEnteredApp) { vm.navigate(s.introductionReturnScreen) }
     val slides = IntroSlide.entries
     val pager = rememberPagerState(initialPage = s.introductionPage) { slides.size }
     val scope = rememberCoroutineScope()
-    BackHandler(enabled = s.hasEnteredApp) { vm.navigate(Screen.More) }
     LaunchedEffect(pager) {
         snapshotFlow { pager.settledPage }.collect { vm.updateIntroductionPage(it) }
     }
@@ -114,7 +104,6 @@ fun WelcomeScreen(vm: WalletViewModel, themeMode: ThemeMode, onThemeChange: (The
 
             HorizontalPager(
                 state = pager,
-                userScrollEnabled = !s.isLoading,
                 verticalAlignment = Alignment.Top,
                 modifier = if (shortWindow) Modifier.height(460.dp) else Modifier.weight(1f)
             ) { page ->
@@ -140,7 +129,7 @@ fun WelcomeScreen(vm: WalletViewModel, themeMode: ThemeMode, onThemeChange: (The
                         Text(stringResource(slide.body), style = MaterialTheme.typography.bodyLarge,
                             textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (slide == IntroSlide.MESSAGING) {
-                            TextButton(onClick = { vm.navigate(Screen.Messaging) }, enabled = !s.isLoading) {
+                            TextButton(onClick = { vm.navigate(Screen.Messaging) }) {
                                 Text(stringResource(R.string.view_messaging), fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.width(6.dp))
                                 Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null,
@@ -151,7 +140,7 @@ fun WelcomeScreen(vm: WalletViewModel, themeMode: ThemeMode, onThemeChange: (The
                 }
             }
 
-            OnboardingControls(slides, pager.currentPage, enabled = !pager.isScrollInProgress && !s.isLoading) { page ->
+            OnboardingControls(slides, pager.currentPage, enabled = !pager.isScrollInProgress) { page ->
                 scope.launch { pager.animateScrollToPage(page) }
             }
             Column(
@@ -160,24 +149,13 @@ fun WelcomeScreen(vm: WalletViewModel, themeMode: ThemeMode, onThemeChange: (The
             ) {
                 Button(
                     onClick = vm::enterApp,
-                    enabled = !s.isLoading, shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
                 ) {
                     Text(stringResource(if (s.hasEnteredApp) R.string.go_to_chats else R.string.get_started),
                         fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
                 }
                 Spacer(Modifier.height(10.dp))
-                OutlinedButton(
-                    onClick = {
-                        if (s.hasEnteredApp) vm.navigate(Screen.Home)
-                        else { vm.resetImport(); vm.navigate(Screen.Import) }
-                    },
-                    enabled = !s.isLoading, shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
-                ) {
-                    Text(stringResource(if (s.hasEnteredApp) R.string.open_wallet else R.string.import_existing_wallet),
-                        fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
-                }
                 Spacer(Modifier.height(14.dp))
                 Text(stringResource(R.string.onboarding_version, BuildConfig.VERSION_NAME),
                     fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -187,13 +165,11 @@ fun WelcomeScreen(vm: WalletViewModel, themeMode: ThemeMode, onThemeChange: (The
 }
 
 @Composable
-fun MoreScreen(vm: WalletViewModel, chat: ChatViewModel) {
+fun MoreScreen(vm: AppViewModel, chat: ChatViewModel, onScan: () -> Unit) {
     val chatState by chat.state.collectAsState()
-    val s by vm.state.collectAsState()
     val context = LocalContext.current
-    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        MainHeader(stringResource(R.string.more), onScan = { vm.openFeature(AppFeature.SCANNER) },
+        MainHeader(stringResource(R.string.more), onScan = onScan,
             onProfile = { vm.navigate(Screen.Profile) })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             Row(Modifier.fillMaxWidth()
@@ -235,36 +211,13 @@ fun MoreScreen(vm: WalletViewModel, chat: ChatViewModel) {
                 stringResource(R.string.help_shortcut_body), { vm.navigate(Screen.Help) })
             ShortcutRow(Icons.Outlined.Explore, stringResource(R.string.presentation),
                 stringResource(R.string.onboarding_version, BuildConfig.VERSION_NAME), { vm.navigate(Screen.Welcome) })
-            SectionLabel(R.string.explore_features)
-            listOf(AppFeature.BUY, AppFeature.DESKTOP).forEach { feature ->
-                ShortcutRow(featureIcon(feature), stringResource(if (feature == AppFeature.BUY) R.string.fiat_title else feature.title),
-                    stringResource(if (feature == AppFeature.BUY) R.string.fiat_intro else R.string.in_development),
-                    { vm.openFeature(feature) })
-            }
-            if (s.isWdkInitialized) {
-                SectionLabel(R.string.local_wallet)
-                ShortcutRow(Icons.Outlined.Draw, stringResource(R.string.sign), stringResource(R.string.sign_message), {
-                    vm.resetSign(); vm.navigate(Screen.Sign)
-                })
-                TextButton(onClick = { confirmDelete = true }, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.delete_wallet), color = MaterialTheme.colorScheme.error)
-                }
-            }
             Spacer(Modifier.height(16.dp))
         }
     }
-    if (confirmDelete) AlertDialog(onDismissRequest = { confirmDelete = false },
-        title = { Text(stringResource(R.string.delete_wallet)) },
-        text = { Text(stringResource(R.string.delete_wallet_confirmation)) },
-        confirmButton = { TextButton(onClick = { confirmDelete = false; vm.deleteWallet() }) {
-            Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
-        } }, dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.cancel)) } })
 }
 
 @Composable
-fun FeatureScreen(vm: WalletViewModel) {
+fun FeatureScreen(vm: AppViewModel) {
     val s by vm.state.collectAsState()
     BackHandler { vm.navigate(s.detailReturnScreen) }
     Column(Modifier.fillMaxSize()) {
@@ -276,27 +229,22 @@ fun FeatureScreen(vm: WalletViewModel) {
             Spacer(Modifier.height(12.dp))
             Text(stringResource(s.feature.description), fontSize = 18.sp, lineHeight = 28.sp, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(24.dp))
-            if (s.feature in setOf(AppFeature.CONTACTS, AppFeature.PROFILE)) {
-                OutlinedButton(onClick = { vm.navigate(Screen.Messaging) }) { Text(stringResource(R.string.chat_account_title)) }
-            } else if (s.feature == AppFeature.SCANNER && s.isWdkInitialized) {
-                OutlinedButton(onClick = { vm.openReceive(Asset.USDC) }) {
-                    Text(stringResource(R.string.receive))
-                }
-            }
+
         }
     }
 }
 
 @Composable
-fun HelpScreen(vm: WalletViewModel) {
+fun HelpScreen(vm: AppViewModel) {
     val s by vm.state.collectAsState()
     BackHandler { vm.navigate(s.detailReturnScreen) }
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(stringResource(R.string.help_center)) { vm.navigate(s.detailReturnScreen) }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(24.dp)) {
-            listOf(R.string.help_recovery_title to R.string.help_recovery_body,
-                R.string.help_networks_title to R.string.help_networks_body,
-                R.string.help_status_title to R.string.help_status_body).forEach { (title, body) ->
+            listOf(R.string.help_chat_account_title to R.string.help_chat_account_body,
+                R.string.help_chat_contacts_title to R.string.help_chat_contacts_body,
+                R.string.help_chat_privacy_title to R.string.help_chat_privacy_body,
+                R.string.help_chat_delivery_title to R.string.help_chat_delivery_body).forEach { (title, body) ->
                 Text(stringResource(title), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.height(10.dp))
                 Text(stringResource(body), fontSize = 15.sp, lineHeight = 23.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -307,7 +255,7 @@ fun HelpScreen(vm: WalletViewModel) {
 }
 
 @Composable
-fun LicensesScreen(vm: WalletViewModel) {
+fun LicensesScreen(vm: AppViewModel) {
     val context = LocalContext.current
     val text = androidx.compose.runtime.remember { context.assets.open("messaging-notices.txt").bufferedReader().use { it.readText() } }
     BackHandler { vm.navigate(Screen.More) }
