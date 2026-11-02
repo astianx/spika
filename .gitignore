@@ -1,0 +1,16 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+/docs
+*.apk
+*.ap_
+*.aab
+*.jks
+*.keystore
+/vendor/wdk-core-kotlin/

@@ -1,0 +1,29 @@
+plugins {
+    id 'com.android.application' version '8.2.2' apply false
+    id 'com.android.library' version '8.2.2' apply false
+    id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+}
+
+project(':wdk-core-kotlin') {
+    afterEvaluate {
+        tasks.named('npmInstall', Exec) {
+            commandLine 'bash', '-lc', 'npm ci'
+            inputs.file('js/package-lock.json')
+            inputs.file(rootProject.file('scripts/patch-wdk-bundler.js'))
+            // npm ci deletes and recreates node_modules while it runs. Gradle
+            // cannot safely snapshot that directory as this task's output.
+            doNotTrackState('npm ci replaces its own output directory')
+        }
+        tasks.register('patchBundler', Exec) {
+            workingDir 'js'
+            commandLine 'node', 'patch-wdk-bundler.js'
+            dependsOn 'npmInstall'
+            inputs.file(rootProject.file('scripts/patch-wdk-bundler.js'))
+        }
+        tasks.named('generateBundle', Exec) {
+            dependsOn 'patchBundler'
+            inputs.file('js/package-lock.json')
+            inputs.file(rootProject.file('scripts/patch-wdk-bundler.js'))
+        }
+    }
+}

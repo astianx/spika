@@ -1,0 +1,202 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+def releaseStoreFile = System.getenv('MIDORI_RELEASE_STORE_FILE')
+def releaseStorePassword = System.getenv('MIDORI_RELEASE_STORE_PASSWORD')
+def releaseKeyAlias = System.getenv('MIDORI_RELEASE_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('MIDORI_RELEASE_KEY_PASSWORD')
+def releaseSigningValues = [releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword]
+def hasReleaseSigning = releaseSigningValues.every { it?.trim() }
+// Machine-local opt-in survives Android Studio builds; never checked in or used by release.
+def localChatProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { localChatProperties.load(it) }
+}
+// Public Node/Cloudflare Workers origin only. Partner credentials must never be compiled into Android.
+def fiatBackendUrl = project.findProperty('midoriFiatBackendUrl')?.toString() ?:
+    System.getenv('MIDORI_FIAT_BACKEND_URL') ?: localChatProperties.getProperty('midori.fiat.backendUrl', '')
+if (fiatBackendUrl) {
+    def uri = new URI(fiatBackendUrl)
+    if (uri.scheme != 'https' || !uri.host || uri.userInfo || uri.query || uri.fragment ||
+        !(uri.path in ['', '/'])) throw new GradleException('Fiat backend must be an HTTPS origin.')
+}
+if (!fiatBackendUrl) {
+    if (project.findProperty('midoriRequireFiatBackend')?.toString() == 'true') {
+        throw new GradleException('Funding services require midori.fiat.backendUrl in local.properties or MIDORI_FIAT_BACKEND_URL. See docs/cloudflare-workers.md.')
+    }
+    logger.warn('Remote fiat/P2P funding services disabled: no HTTPS backend URL configured. See docs/cloudflare-workers.md.')
+}
+// Messaging service of the pilot. Public host/domain only; empty keeps the manual sign-in form.
+def pilotProperty = { String env, String key -> System.getenv(env) ?: localChatProperties.getProperty(key, '') }
+def chatPilotHost = pilotProperty('MIDORI_CHAT_PILOT_HOST', 'midori.chat.pilotHost')
+def chatPilotDomain = pilotProperty('MIDORI_CHAT_PILOT_DOMAIN', 'midori.chat.pilotDomain')
+def chatPilotPort = pilotProperty('MIDORI_CHAT_PILOT_PORT', 'midori.chat.pilotPort') ?: '5222'
+if (chatPilotHost || chatPilotDomain) {
+    def hostname = /[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?/
+    if (!(chatPilotHost ==~ hostname) || !(chatPilotDomain ==~ hostname) || !(chatPilotPort ==~ /[0-9]{1,5}/) ||
+        chatPilotPort.toInteger() !in 1..65535) {
+        throw new GradleException('The messaging pilot needs a valid host, domain and port.')
+    }
+}
+// Optional smaller debug APK for a specific test device; release remains universal.
+def debugAbi = project.findProperty('midoriDebugAbi')?.toString()
+if (debugAbi && !(debugAbi in ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'])) {
+    throw new GradleException('midoriDebugAbi must be arm64-v8a, armeabi-v7a, x86, or x86_64.')
+}
+if (releaseSigningValues.any { it?.trim() } && !hasReleaseSigning) {
+    throw new GradleException('Set all four MIDORI_RELEASE_* variables to sign a release build.')
+}
+
+android {
+    namespace 'org.astianx.midori.one'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "org.astianx.midori.one"
+        minSdk 33
+        targetSdk 35
+        versionCode 2
+        versionName "0.1.0"
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        buildConfigField 'String', 'FIAT_BACKEND_URL', groovy.json.JsonOutput.toJson(fiatBackendUrl)
+        buildConfigField 'String', 'CHAT_PILOT_HOST', groovy.json.JsonOutput.toJson(chatPilotHost)
+        buildConfigField 'String', 'CHAT_PILOT_DOMAIN', groovy.json.JsonOutput.toJson(chatPilotDomain)
+        buildConfigField 'int', 'CHAT_PILOT_PORT', chatPilotPort
+    }
+
+    flavorDimensions 'network'
+    productFlavors {
+        mainnet {
+            dimension 'network'
+        }
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            midoriRelease {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            versionNameSuffix '-dev'
+            // Opt-in pin for the local ejabberd laboratory. Never included in release.
+            def chatPin = project.findProperty('midoriChatDevCertificateSha256')?.toString() ?:
+                localChatProperties.getProperty('midori.chat.devCertificateSha256', '')
+            if (chatPin && !(chatPin ==~ /[0-9A-Fa-f]{64}/)) {
+                throw new GradleException('midoriChatDevCertificateSha256 must contain 64 hex characters.')
+            }
+            buildConfigField 'String', 'CHAT_DEV_CERT_SHA256', '"' + chatPin + '"'
+            if (debugAbi) {
+                ndk { abiFilters debugAbi }
+            }
+        }
+        release {
+            buildConfigField 'String', 'CHAT_DEV_CERT_SHA256', '""'
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.midoriRelease
+            }
+        }
+    }
+
+    packagingOptions {
+        resources { merges += ['META-INF/LICENSE*', 'META-INF/NOTICE*'] }
+        jniLibs {
+            // AGP 8.2.2 does not align uncompressed .so entries for 16 KB pages.
+            useLegacyPackaging true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    buildFeatures {
+        compose true
+        buildConfig true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion '1.5.8'
+    }
+    sourceSets {
+        test.java.srcDir 'src/groupTest/java'
+        androidTest.java.srcDir 'src/groupTest/java'
+    }
+}
+
+dependencies {
+    implementation project(':wdk-core-kotlin')
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
+    testImplementation 'org.json:json:20240303'
+    testImplementation 'org.bouncycastle:bcprov-jdk18on:1.80.2'
+    androidTestImplementation 'androidx.test:runner:1.5.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.compose.ui:ui-test-junit4:1.6.2'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest:1.6.2'
+
+    implementation platform('androidx.compose:compose-bom:2024.02.00')
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
+    implementation 'androidx.activity:activity-compose:1.8.2'
+    implementation 'androidx.browser:browser:1.8.0'
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-graphics'
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-extended'
+    // Compatible with the current Compose/AGP baseline; all emoji assets are bundled.
+    implementation 'androidx.emoji2:emoji2-emojipicker:1.5.0'
+    implementation 'androidx.emoji2:emoji2-bundled:1.5.0'
+
+    implementation 'com.google.zxing:core:3.5.3'
+    implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
+    // Pure secp256k1/Keccak primitives for the P2P.me relay protocol; no global provider replacement.
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.80.2'
+
+    // Signal OMEMO is GPLv3; see THIRD_PARTY_NOTICES.md before distributing the APK.
+    def smackVersion = '4.5.0'
+    implementation "org.igniterealtime.smack:smack-android:$smackVersion"
+    implementation "org.igniterealtime.smack:smack-tcp:$smackVersion"
+    implementation "org.igniterealtime.smack:smack-extensions:$smackVersion"
+    implementation "org.igniterealtime.smack:smack-experimental:$smackVersion"
+    implementation "org.igniterealtime.smack:smack-omemo-signal:$smackVersion"
+    testImplementation "org.igniterealtime.smack:smack-java11:$smackVersion"
+    implementation 'org.whispersystems:signal-protocol-java:2.8.1'
+}
+
+// Smack 4.5's Android shim and XML parser request different copies of the same parser.
+// Keep the maintained org.codelibs implementation already supplied by smack-xmlparser-xpp3.
+configurations.configureEach {
+    exclude group: 'xpp3', module: 'xpp3_min'
+}
+
+// The network laboratory is explicitly opt-in; ordinary unit tests never create connections.
+tasks.withType(Test).configureEach {
+    def groupFixture = project.findProperty('midoriGroupFixture')?.toString()
+    if (groupFixture) {
+        systemProperty 'midori.group.fixture', groupFixture
+        outputs.upToDateWhen { false }
+        maxHeapSize = '1536m' // Hosts 200 independent synthetic clients, not the Android app.
+    } else {
+        exclude '**/GroupCapacityHostTest*'
+    }
+}
