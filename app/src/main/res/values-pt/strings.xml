@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="chat_pending">Aguardando conexão</string>
+    <string name="chat_preparing">Preparando mensagem criptografada</string>
     <string name="app_logo">Logotipo do Midori</string>
     <string name="appearance">Aparência</string>
     <string name="change_theme">Alterar tema. Atual: %1$s</string>

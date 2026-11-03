@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="chat_pending">Pending connection</string>
+    <string name="chat_preparing">Preparing encrypted message</string>
     <!-- Product names and numeric hints are not translated. -->
     <string name="app_name" translatable="false">Midori</string>
     <string name="brand_name" translatable="false">MIDORI</string>

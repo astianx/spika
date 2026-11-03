@@ -1,6 +1,5 @@
 package org.astianx.midori.one.chat
 
-import java.util.Date
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.xml.namespace.QName
@@ -117,21 +116,36 @@ internal class SmackGroups(private val connection: XMPPConnection, private val o
             .also { states[room] = it; events.group(it) }
     }
     override fun recipients(room: String): Set<String> = info(room).members
-    override fun send(room: String, body: String, id: String) {
+    override fun send(room: String, body: String, id: String) = sendDurably(room, body, id) {}
+    override fun sendDurably(room: String, body: String, id: String, emitting: () -> Unit) {
         val muc = rooms[room]?.takeIf { it.isJoined } ?: throw ChatException(UiText(R.string.chat_group_not_joined))
         protocols.requireLegacy(room)
         val before = recipientSnapshot(room)
         val peers = (before.members - account).map { JidCreate.bareFrom(it) }.toSet()
         // Smack serializes encrypt/decrypt on this manager. Persist every recipient's ratchet
         // together before releasing that lock or allowing the ciphertext onto the connection.
-        val encrypted = synchronized(omemo) { records.durableBatch { omemo.encrypt(peers, body) } }
-        GroupSendGuard.verifyComplete(before, encrypted.intendedDevices.map { GroupDevice(it.jid.toString(), it.deviceId) }.toSet(), encrypted.isMissingRecipients)
+        val identity = identitySnapshot(before)
+        val message = synchronized(omemo) {
+            PreparedSendStore(records, account).prepare(room, id, identity) {
+                val encrypted = omemo.encrypt(peers, body)
+                GroupSendGuard.verifyComplete(before, encrypted.intendedDevices.map { GroupDevice(it.jid.toString(), it.deviceId) }.toSet(), encrypted.isMissingRecipients)
+                val builder = StanzaBuilder.buildMessage(id).to(muc.room).ofType(Message.Type.groupchat).addExtension(encrypted.element)
+                StoreHint.set(builder)
+                builder.build()
+            }
+        }
         GroupSendGuard.verifyUnchanged(before, recipientSnapshot(room))
-        val builder = StanzaBuilder.buildMessage(id).to(muc.room).ofType(Message.Type.groupchat).addExtension(encrypted.element)
-        StoreHint.set(builder)
-        val message = builder.build()
+        if (identity != identitySnapshot(before)) throw ChatException(UiText(R.string.chat_group_changed))
         check(message.body == null && message.hasExtension("encrypted", SmackMessenger.OMEMO_NAMESPACE))
-        connection.sendStanza(message)
+        emitting()
+        sendConfirmedStanza(connection, message)
+    }
+    private fun identitySnapshot(snapshot: GroupRecipients): String = synchronized(omemo) {
+        recipientIdentitySnapshot(snapshot.members, snapshot.devices.map {
+            val device = org.jivesoftware.smackx.omemo.internal.OmemoDevice(JidCreate.bareFrom(it.address), it.id)
+            val fingerprint = omemo.getFingerprint(device)
+            ChatDevice(it.address, it.id, fingerprint.toString(), omemo.isTrustedOmemoIdentity(device, fingerprint))
+        })
     }
     private fun recipientSnapshot(room: String): GroupRecipients {
         val members = recipients(room)
@@ -147,37 +161,39 @@ internal class SmackGroups(private val connection: XMPPConnection, private val o
             }
         }
     }
-    private fun receive(muc: MultiUserChat, stanza: Message, body: String, sender: String, historical: Boolean, stamp: Long? = null) {
+    private fun receive(muc: MultiUserChat, stanza: Message, body: String, sender: String, historical: Boolean, stamp: Long? = null,
+        protection: MessageProtection = MessageProtection.ENCRYPTED) {
         val id = stanza.stanzaId ?: return
         events.message(ChatPayload.decode(ChatMessage(id, muc.room.toString(), body, sender == account,
             stamp ?: DelayInformationManager.getDelayTimestamp(stanza)?.time ?: System.currentTimeMillis(),
-            sender = sender)), historical)
+            sender = sender, protection = protection)), historical)
     }
     private fun sync(muc: MultiUserChat) {
         val mam = MamManager.getInstanceFor(muc)
         if (!mam.isSupported) return
-        val key = "group-archive/$account/${muc.room}"
-        val since = records.get(key)?.toLongOrNull()
-        val args = MamManager.MamQueryArgs.builder().setResultPageSizeTo(100)
-        if (since == null) args.queryLastPage() else args.limitResultsSince(Date((since - 60_000).coerceAtLeast(0)))
-        val query = mam.queryArchive(args.build())
-        var latest = since ?: 0L
+        val checkpoint = ChatArchiveCoordinator(records, "group-archive/$account/${muc.room}")
+        val query = mam.queryArchive(checkpoint.arguments())
+        var latest = checkpoint.timestamp ?: 0L
         do {
             query.page.forwarded.forEach { forwarded ->
                 val stanza = forwarded.forwardedStanza
                 val stamp = forwarded.delayInformation?.stamp?.time ?: System.currentTimeMillis()
-                val sender = MUCUser.from(stanza)?.item?.jid?.asBareJid() ?: return@forEach
                 val encrypted = stanza.getExtension(QName(SmackMessenger.OMEMO_NAMESPACE, "encrypted")) as? OmemoElement
                 if (encrypted != null) {
-                    val decrypted = runCatching { omemo.decrypt(sender, encrypted) }.getOrNull()
+                    // Advancing this page would permanently skip a message we cannot identify.
+                    val sender = MUCUser.from(stanza)?.item?.jid?.asBareJid()
+                        ?: throw ChatException(UiText(R.string.chat_group_unsafe))
+                    if (stanza.stanzaId.isNullOrBlank()) throw java.io.IOException("Archived group message has no stable ID")
+                    val decrypted = decryptArchived(omemo, sender, encrypted)
                     if (decrypted?.body != null) receive(muc, stanza, decrypted.body, sender.toString(), true, stamp)
+                    else receive(muc, stanza, "", sender.toString(), true, stamp, MessageProtection.UNREADABLE)
                 }
                 latest = maxOf(latest, stamp)
             }
-            if (query.isComplete || since == null) break
+            checkpoint.commitPage(latest, query.page.mamFinIq.rsmSet?.last)
+            if (query.isComplete) break
             query.pageNext(100)
         } while (true)
-        if (latest > 0) records.put(key, latest.toString())
     }
     override fun invite(room: String, peer: String) {
         val current = info(room)

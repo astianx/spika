@@ -120,6 +120,7 @@ internal class ChatMedia(private val context: Context,
             connection.outputStream.use { stream ->
                 var written = 0
                 while (written < encrypted.bytes.size) {
+                    if (Thread.currentThread().isInterrupted) throw java.io.InterruptedIOException()
                     val count = minOf(64 * 1024, encrypted.bytes.size - written)
                     stream.write(encrypted.bytes, written, count); written += count
                     progress((written * 100L / encrypted.bytes.size).toInt())
@@ -178,6 +179,7 @@ internal class ChatMedia(private val context: Context,
             val output = ByteArrayOutputStream()
             val buffer = ByteArray(64 * 1024)
             while (true) {
+                if (Thread.currentThread().isInterrupted) throw java.io.InterruptedIOException()
                 val count = stream.read(buffer)
                 if (count < 0) break
                 if (output.size().toLong() + count > max) throw ChatException(UiText(R.string.chat_file_too_large))

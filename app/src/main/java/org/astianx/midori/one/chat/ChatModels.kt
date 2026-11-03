@@ -6,7 +6,7 @@ import org.jxmpp.jid.impl.JidCreate
 
 enum class ChatConnection { DISCONNECTED, CONNECTING, SECURING, ONLINE, ERROR }
 /** FAILED means nothing left the device. UNCERTAIN means it may have: retrying reuses the ID, so the peer deduplicates. */
-enum class MessageDelivery { SENDING, SENT, DELIVERED, READ, FAILED, UNCERTAIN }
+enum class MessageDelivery { PENDING, PREPARING, SENDING, SENT, DELIVERED, READ, FAILED, UNCERTAIN }
 enum class MessageProtection { ENCRYPTED, UNREADABLE, REJECTED_PLAINTEXT }
 
 data class ChatAccount(val address: String, val password: String, val host: String, val port: Int = 5222) {
@@ -93,7 +93,7 @@ internal fun ChatMessage.withReceipt(from: String, messageId: String, status: Me
         status.rank > delivery.rank) copy(delivery = status) else this
 
 private val MessageDelivery.rank: Int get() = when (this) {
-    MessageDelivery.SENDING, MessageDelivery.UNCERTAIN -> 0
+    MessageDelivery.PENDING, MessageDelivery.PREPARING, MessageDelivery.SENDING, MessageDelivery.UNCERTAIN -> 0
     MessageDelivery.SENT -> 1
     MessageDelivery.DELIVERED -> 2
     MessageDelivery.READ -> 3
@@ -102,13 +102,20 @@ private val MessageDelivery.rank: Int get() = when (this) {
 
 /** The archive or a carbon proves an outgoing message left this device, whatever state a crash left it in. */
 internal fun ChatMessage.reconciledAsSent(): ChatMessage =
-    if (outgoing && delivery in setOf(MessageDelivery.SENDING, MessageDelivery.UNCERTAIN, MessageDelivery.FAILED))
+    if (outgoing && delivery in setOf(MessageDelivery.PENDING, MessageDelivery.PREPARING, MessageDelivery.SENDING, MessageDelivery.UNCERTAIN, MessageDelivery.FAILED))
         copy(delivery = MessageDelivery.SENT) else this
+
+internal fun ChatMessage.reconcileIncoming(incoming: ChatMessage): ChatMessage {
+    val readable = if (protection != MessageProtection.ENCRYPTED && incoming.protection == MessageProtection.ENCRYPTED)
+        incoming.copy(timestamp = timestamp, read = read || incoming.read, delivery = delivery) else this
+    return if (incoming.outgoing) readable.reconciledAsSent() else readable
+}
 
 internal interface ChatTransport {
     fun connect(account: ChatAccount, events: ChatEvents)
     fun disconnect()
     fun send(peer: String, body: String, id: String)
+    fun sendDurably(peer: String, body: String, id: String, emitting: () -> Unit) { emitting(); send(peer, body, id) }
     fun devices(peer: String): List<ChatDevice>
     fun trust(device: ChatDevice, trusted: Boolean)
     fun addContact(peer: String)
@@ -133,6 +140,7 @@ internal interface ChatEvents {
     fun connection(status: ChatConnection)
     fun connectionFailed(error: Exception) { connection(ChatConnection.ERROR) }
     fun contacts(contacts: List<ChatContact>)
+    /** Must return only after durable acceptance; throw on disk failure. No delivery ack before return. */
     fun message(message: ChatMessage, historical: Boolean)
     fun receipt(peer: String, id: String, status: MessageDelivery)
     fun fingerprint(value: String)

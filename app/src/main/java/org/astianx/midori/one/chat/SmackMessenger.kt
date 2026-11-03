@@ -1,6 +1,5 @@
 package org.astianx.midori.one.chat
 
-import java.util.Date
 import java.util.UUID
 import org.astianx.midori.one.BuildConfig
 import org.astianx.midori.one.R
@@ -36,7 +35,7 @@ import org.jivesoftware.smackx.receipts.DeliveryReceiptRequest
 import org.jxmpp.jid.Jid
 import org.jxmpp.jid.impl.JidCreate
 
-/** Blocking network API. The ViewModel serializes calls on its IO dispatcher. No plaintext send API. */
+/** Blocking IO transport. Send coordinators own network work; OMEMO serializes ratchet commits. No plaintext send API. */
 internal class SmackMessenger(
     private val records: ChatRecords,
     private val devCertificatePin: String = if (BuildConfig.DEBUG) BuildConfig.CHAT_DEV_CERT_SHA256 else "",
@@ -165,7 +164,10 @@ internal class SmackMessenger(
         val from = stanza.from?.asEntityBareJidIfPossible()?.toString() ?: return
         val outgoing = from == account.address
         val peer = if (outgoing) stanza.to?.asEntityBareJidIfPossible()?.toString() ?: return else from
-        val id = stanza.stanzaId ?: return // Stable IDs are required for safe archive/live deduplication.
+        val id = stanza.stanzaId?.takeIf { it.isNotBlank() } ?: run {
+            if (historical) throw java.io.IOException("Archived message has no stable ID")
+            return
+        }
         events.message(ChatPayload.decode(ChatMessage(id, peer, body, outgoing,
             timestamp ?: DelayInformationManager.getDelayTimestamp(stanza)?.time ?: System.currentTimeMillis(),
             protection = protection, markable = ChatMarkersElements.MarkableExtension.from(stanza) != null, sender = from)), historical)
@@ -176,12 +178,9 @@ internal class SmackMessenger(
         val manager = omemo ?: return
         val mam = MamManager.getInstanceFor(conn)
         if (!mam.isSupported) return
-        val watermarkKey = "archive/${account.address}"
-        val watermark = records.get(watermarkKey)?.toLongOrNull()
-        val args = MamManager.MamQueryArgs.builder().setResultPageSizeTo(100)
-        if (watermark != null) args.limitResultsSince(Date((watermark - 60_000).coerceAtLeast(0))) else args.queryLastPage()
-        var query = mam.queryArchive(args.build())
-        var latest = watermark ?: 0L
+        val checkpoint = ChatArchiveCoordinator(records, "archive/${account.address}")
+        val query = mam.queryArchive(checkpoint.arguments())
+        var latest = checkpoint.timestamp ?: 0L
         do {
             query.page.forwarded.forEach { forwarded ->
                 val stanza = forwarded.forwardedStanza
@@ -189,36 +188,54 @@ internal class SmackMessenger(
                 val encrypted = stanza.getExtension(javax.xml.namespace.QName(OMEMO_NAMESPACE, "encrypted")) as? OmemoElement
                 if (encrypted != null) {
                     // Lost keys cannot decrypt a new device's old archive. Never invent the original text.
-                    val decrypted = runCatching { manager.decrypt(stanza.from.asBareJid(), encrypted) }.getOrNull()
+                    val decrypted = decryptArchived(manager, stanza.from.asBareJid(), encrypted)
                     if (decrypted?.body != null) receive(stanza, decrypted.body, true, timestamp = stamp)
                     else receive(stanza, "", true, MessageProtection.UNREADABLE, stamp)
                 } else if (stanza.body != null) receive(stanza, "", true, MessageProtection.REJECTED_PLAINTEXT, stamp)
                 latest = maxOf(latest, stamp)
             }
-            if (query.isComplete || watermark == null) break
+            checkpoint.commitPage(latest, query.page.mamFinIq.rsmSet?.last)
+            if (query.isComplete) break
             query.pageNext(100)
         } while (true)
-        if (latest > 0) records.put(watermarkKey, latest.toString())
     }
 
-    override fun send(peer: String, body: String, id: String) {
+    override fun send(peer: String, body: String, id: String) = sendDurably(peer, body, id) {}
+    override fun sendDurably(peer: String, body: String, id: String, emitting: () -> Unit) {
         val conn = connection ?: throw ChatException(UiText(R.string.chat_offline_error))
         val manager = omemo ?: throw ChatException(UiText(R.string.chat_encryption_error))
         if (!ready || !conn.isAuthenticated) throw ChatException(UiText(R.string.chat_offline_error))
-        if (groups?.knows(peer) == true) { groups!!.send(peer, body, id); return }
+        if (groups?.knows(peer) == true) { groups!!.sendDurably(peer, body, id, emitting); return }
         val recipient = JidCreate.entityBareFrom(peer)
         manager.requestDeviceListUpdateFor(recipient)
         if (!manager.contactSupportsOmemo(recipient)) throw ChatException(UiText(R.string.chat_no_secure_device))
-        val encrypted = manager.encrypt(recipient, body)
-        if (encrypted.isMissingRecipients || encrypted.intendedDevices.none { it.jid == recipient }) {
-            throw ChatException(UiText(R.string.chat_encryption_error))
+        val snapshot = directSnapshot(peer)
+        val message = synchronized(manager) {
+            PreparedSendStore(records, account.address).prepare(peer, id, snapshot.first) {
+                val encrypted = manager.encrypt(recipient, body)
+                if (encrypted.isMissingRecipients || encrypted.intendedDevices.map { GroupDevice(it.jid.toString(), it.deviceId) }.toSet() != snapshot.second)
+                    throw ChatException(UiText(R.string.chat_encryption_error))
+                val builder = org.jivesoftware.smack.packet.StanzaBuilder.buildMessage(id)
+                    .addExtension(DeliveryReceiptRequest())
+                    .addExtension(ChatMarkersElements.MarkableExtension.INSTANCE)
+                encrypted.buildMessage(builder, recipient)
+            }
         }
-        val builder = org.jivesoftware.smack.packet.StanzaBuilder.buildMessage(id)
-            .addExtension(DeliveryReceiptRequest())
-            .addExtension(ChatMarkersElements.MarkableExtension.INSTANCE)
-        val message = encrypted.buildMessage(builder, recipient)
+        if (directSnapshot(peer).first != snapshot.first) throw ChatException(UiText(R.string.chat_group_changed))
         check(message.body == null && message.hasExtension("encrypted", OMEMO_NAMESPACE))
-        try { conn.sendStanza(message) } catch (e: Exception) { throw UncertainSendException(e) }
+        emitting()
+        sendConfirmedStanza(conn, message)
+    }
+
+    private fun directSnapshot(peer: String): Pair<String, Set<GroupDevice>> {
+        val manager = requireNotNull(omemo)
+        val published = GroupDeviceDirectory.fetch(requireNotNull(connection), setOf(account.address, peer))
+        val expected = published.flatMap { (address, ids) -> ids.filterNot { address == account.address && it == manager.ownDevice.deviceId }
+            .map { GroupDevice(address, it) } }.toSet()
+        val identities = devices(peer)
+        if (expected.none { it.address == peer } || identities.map { GroupDevice(it.address, it.id) }.toSet() != expected)
+            throw ChatException(UiText(R.string.chat_no_secure_device))
+        return recipientIdentitySnapshot(setOf(account.address, peer), identities) to expected
     }
 
     override fun devices(peer: String): List<ChatDevice> {

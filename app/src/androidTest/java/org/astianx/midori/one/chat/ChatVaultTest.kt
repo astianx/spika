@@ -13,6 +13,50 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ChatVaultTest {
+    private fun preparedFixture(id: String): org.jivesoftware.smack.packet.Message {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        org.jivesoftware.smack.android.AndroidSmackInitializer.initialize(context)
+        org.jivesoftware.smack.android.AndroidSmackInitializer().initialize()
+        val element = org.jivesoftware.smackx.omemo.element.OmemoElement_VAxolotl(
+            org.jivesoftware.smackx.omemo.element.OmemoHeaderElement_VAxolotl(7,
+                listOf(org.jivesoftware.smackx.omemo.element.OmemoKeyElement(ByteArray(32) { 4 }, 8)), ByteArray(12) { 3 }),
+            ByteArray(64) { 9 })
+        return org.jivesoftware.smack.packet.StanzaBuilder.buildMessage(id).to("bob@example.org")
+            .ofType(org.jivesoftware.smack.packet.Message.Type.chat).addExtension(element).build()
+    }
+
+    @Test fun preparedCiphertextAndRatchetSurviveVaultReopenWithoutAnotherEncryption() = withVault { vault, _, reopen ->
+        val first = PreparedSendStore(vault, "alice@example.org").prepare("bob@example.org", "stable", "trusted snapshot") {
+            vault.put("ratchet", "advanced together")
+            preparedFixture("stable")
+        }
+        val restored = reopen()
+        assertEquals("advanced together", restored.get("ratchet"))
+        val retry = PreparedSendStore(restored, "alice@example.org").prepare("bob@example.org", "stable", "trusted snapshot") {
+            error("Reopening must reuse ciphertext, not advance the ratchet again")
+        }
+        assertEquals(first.toXML().toString(), retry.toXML().toString())
+        assertEquals(1, restored.keys("prepared/").size)
+    }
+
+    @Test fun failedPreparedSendCommitPreservesThePreviousVaultAndCannotReturnCiphertext() = withVault { vault, file, reopen ->
+        vault.put("ratchet", "original")
+        val original = file.readBytes()
+        val blocked = File(file.path + ".new").apply { check(mkdir()) }
+        val blocker = File(blocked, "blocker").apply { writeText("Injected disk failure") }
+        try {
+            assertThrows(java.io.IOException::class.java) {
+                PreparedSendStore(vault, "alice@example.org").prepare("bob@example.org", "stable", "snapshot") {
+                    vault.put("ratchet", "must not become active")
+                    preparedFixture("stable")
+                }
+            }
+        } finally { blocker.delete(); blocked.delete() }
+        assertArrayEquals(original, file.readBytes())
+        assertEquals("original", reopen().get("ratchet"))
+        assertTrue(reopen().keys("prepared/").isEmpty())
+    }
+
     private fun withVault(test: (ChatVault, File, () -> ChatVault) -> Unit) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val name = "batch-test-${UUID.randomUUID()}"

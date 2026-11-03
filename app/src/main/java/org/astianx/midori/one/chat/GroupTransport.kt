@@ -13,6 +13,7 @@ internal interface GroupTransport {
     fun info(room: String): ChatGroup
     fun recipients(room: String): Set<String>
     fun send(room: String, body: String, id: String)
+    fun sendDurably(room: String, body: String, id: String, emitting: () -> Unit) { emitting(); send(room, body, id) }
     fun invite(room: String, peer: String)
     fun remove(room: String, peer: String)
     fun delete(room: String)

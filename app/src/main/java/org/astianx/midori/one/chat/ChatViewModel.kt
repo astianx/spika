@@ -20,7 +20,6 @@ import org.astianx.midori.one.UiText
 import org.jivesoftware.smack.android.AndroidSmackInitializer
 import org.jivesoftware.smack.sasl.SASLErrorException
 import org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException
-import org.json.JSONArray
 import org.json.JSONObject
 
 class ChatViewModel internal constructor(
@@ -37,6 +36,37 @@ class ChatViewModel internal constructor(
     private val mutableState = MutableStateFlow(ChatUiState(restoringSession = true))
     val state: StateFlow<ChatUiState> = mutableState
     private val mutex = Mutex()
+    private val history = ChatHistoryRepository(records) { media?.hasPreview(it) == true }
+    private val transfers = ChatTransferCoordinator(viewModelScope, io, mutex) { e ->
+        mutableState.update { it.copy(error = errorText(e), busy = false, mediaProgress = null) }
+    }
+    private val sends = ChatSendCoordinator(viewModelScope, io, mutex) { e ->
+        mutableState.update { it.copy(error = errorText(e), busy = false) }
+    }
+    private val captureLeases = mutableSetOf<String>()
+    private data class TransferSession(val account: String, val generation: Long, val client: ChatTransport, val peer: String)
+    private data class UploadWork(val session: TransferSession, val original: MediaSelection)
+    private data class Uploaded(val attachment: ChatAttachment, val selection: MediaSelection, val preview: String?)
+
+    private fun transferSession(peer: String): TransferSession {
+        requireOnline()
+        val s = state.value
+        if (peer in s.blocked) throw ChatException(UiText(R.string.chat_contact_blocked))
+        if (s.groups.any { it.address == peer && !it.joined }) throw ChatException(UiText(R.string.chat_group_not_joined))
+        return TransferSession(s.account, generation, requireNotNull(transport), peer)
+    }
+    private fun current(session: TransferSession) = generation == session.generation &&
+        state.value.account == session.account && transport === session.client
+    private fun progress(session: TransferSession, value: Int) {
+        if (current(session)) mutableState.update { it.copy(mediaProgress = value) }
+    }
+    private fun finishTransfer(work: UploadWork, result: Uploaded?) {
+        captureLeases.remove(work.original.uri)
+        result?.selection?.takeIf { it != work.original }?.let(::releaseSelectedCapture)
+        result?.preview?.takeIf { it !in state.value.mediaFiles.values }?.let { media?.removePreview(it) }
+        releaseSelectedCapture(work.original)
+        if (current(work.session)) mutableState.update { it.copy(busy = false, mediaProgress = null) }
+    }
     private var transport: ChatTransport? = null
     private var credentials: ChatAccount? = null
     @Volatile private var generation = 0L
@@ -302,7 +332,12 @@ class ChatViewModel internal constructor(
                     mutableState.update { s -> s.copy(contacts = (contacts + s.contacts.filter { old -> contacts.none { it.address == old.address } }).distinctBy { it.address }) }
                     saveHistory()
                 } }
-                override fun message(message: ChatMessage, historical: Boolean) { task {
+                override fun message(message: ChatMessage, historical: Boolean) {
+                    // Synchronous durable handoff. Do not make Smack wait for this ViewModel's
+                    // state mutex: connect/archive sync may itself be holding that mutex.
+                    if (!current()) throw java.io.IOException("Obsolete messaging session")
+                    history.accept(account.address, message)
+                    task {
                     if (!current() || message.peer in state.value.blocked) return@task
                     val before = state.value
                     val options = before.conversationOptions[message.peer] ?: ConversationOptions()
@@ -312,10 +347,11 @@ class ChatViewModel internal constructor(
                     if (index >= 0) {
                         // An archived or carbon copy of our own message proves it left this device.
                         val known = before.messages[index]
-                        if (message.outgoing && known.reconciledAsSent() != known) {
-                            mutableState.update { s -> s.copy(messages = s.messages.map { if (it === known) it.reconciledAsSent() else it }) }
-                            saveHistory()
+                        val reconciled = known.reconcileIncoming(message)
+                        if (reconciled != known) {
+                            mutableState.update { s -> s.copy(messages = s.messages.map { if (it === known) reconciled else it }) }
                         }
+                        saveHistory()
                         return@task
                     }
                     val isOpen = foreground && before.selectedPeer == message.peer
@@ -365,6 +401,7 @@ class ChatViewModel internal constructor(
                 .put("host", account.host).put("port", account.port).toString())
             retryAttempt = 0
             autoRetryBlocked = false
+            resumePendingSends()
         } catch (e: Exception) {
             autoRetryBlocked = !canRetryConnection(e)
             updateConnection(ChatConnection.ERROR)
@@ -401,7 +438,7 @@ class ChatViewModel internal constructor(
     }
 
     private fun restoreAccountState(account: ChatAccount, connection: ChatConnection) {
-        val restored = records.get("history/${account.address}")?.let(::readHistory) ?: ChatUiState()
+        val restored = history.load(account.address)
         mutableState.value = restored.copy(account = account.address, connection = connection,
             restoringSession = state.value.restoringSession,
             backgroundConnection = state.value.backgroundConnection, connectionServiceRunning = state.value.connectionServiceRunning,
@@ -559,31 +596,67 @@ class ChatViewModel internal constructor(
         val s = state.value
         val peer = targetPeer ?: s.selectedPeer ?: return
         if (body.length > 8_000) throw ChatException(UiText(R.string.chat_message_too_long))
-        requireOnline()
+        if (s.account.isBlank()) throw ChatException(UiText(R.string.chat_offline_error))
         if (peer in s.blocked) throw ChatException(UiText(R.string.chat_contact_blocked))
-        if (s.groups.any { it.address == peer && !it.joined }) throw ChatException(UiText(R.string.chat_group_not_joined))
+        if (s.connection == ChatConnection.ONLINE && s.groups.any { it.address == peer && !it.joined })
+            throw ChatException(UiText(R.string.chat_group_not_joined))
         val message = ChatMessage(UUID.randomUUID().toString(), peer, body, true, System.currentTimeMillis(),
-            MessageDelivery.SENDING, read = true, sender = s.account, attachment = attachment, sharedContact = contact, location = location,
+            MessageDelivery.PENDING, read = true, sender = s.account, attachment = attachment, sharedContact = contact, location = location,
             replyTo = reply)
-        mutableState.update { it.copy(messages = it.messages + message, busy = true, error = null,
+        mutableState.update { it.copy(messages = it.messages + message, busy = false, error = null,
+            drafts = if (clearDraft && it.drafts[peer] == s.drafts[peer]) it.drafts - peer else it.drafts,
+            pendingMedia = if (clearDraft) null else it.pendingMedia,
             replyingTo = if (reply != null) null else it.replyingTo) }
-        try {
-            saveHistory()
-            transport!!.send(peer, ChatPayload.encode(message), message.id)
-            mutableState.update { current -> current.copy(messages = current.messages.map {
-                it.withReceipt(peer, message.id, MessageDelivery.SENT)
-            }, drafts = if (clearDraft && current.drafts[peer] == s.drafts[peer]) current.drafts - peer else current.drafts,
-                pendingMedia = if (clearDraft) null else current.pendingMedia, busy = false, mediaProgress = null) }
-        } catch (e: Exception) {
-            noteSendFailure(peer, message.id, e)
-            mutableState.update { current -> current.copy(messages = current.messages.map {
-                if (it.id == message.id) it.copy(delivery = failedDelivery(e)) else it
-            }, busy = false, mediaProgress = null, error = errorText(e),
-                verificationPeer = if (e is UndecidedOmemoIdentityException) peer else current.verificationPeer) }
+        try { saveHistory() } catch (e: Exception) {
+            mutableState.value = s.copy(messages = s.messages + message.copy(delivery = MessageDelivery.FAILED))
+            throw e
         }
-        saveHistory()
+        queueSend(message)
     }
-    private fun failedDelivery(e: Exception) = if (e is UncertainSendException) MessageDelivery.UNCERTAIN else MessageDelivery.FAILED
+
+    private fun queueSend(message: ChatMessage) {
+        val token = generation
+        val account = state.value.account
+        val client = transport ?: return
+        if (state.value.connection != ChatConnection.ONLINE) return
+        sends.submit("$token/${message.mediaKey}", prepare = {
+            val s = state.value
+            val original = s.messages.find { it.mediaKey == message.mediaKey }
+            if (token != generation || account != s.account || client !== transport || s.connection != ChatConnection.ONLINE ||
+                original == null || original.delivery !in setOf(MessageDelivery.PENDING, MessageDelivery.FAILED, MessageDelivery.UNCERTAIN)) null
+            else {
+                if (original.peer in s.blocked) throw ChatException(UiText(R.string.chat_contact_blocked))
+                if (s.groups.any { it.address == original.peer && !it.joined }) throw ChatException(UiText(R.string.chat_group_not_joined))
+                mutableState.update { it.copy(error = null, messages = it.messages.map { m ->
+                    if (m.mediaKey == original.mediaKey) m.copy(delivery = MessageDelivery.PREPARING) else m }) }
+                try { saveHistory() } catch (e: Exception) { mutableState.value = s; throw e }
+                ChatSendAttempt(original, client, token)
+            }
+        }, emitting = { attempt ->
+            if (attempt.generation != generation || attempt.client !== transport || account != state.value.account)
+                throw java.io.IOException("Obsolete send attempt")
+            val before = state.value
+            mutableState.update { it.copy(messages = it.messages.map { m ->
+                if (m.mediaKey == attempt.message.mediaKey && m.delivery == MessageDelivery.PREPARING) m.copy(delivery = MessageDelivery.SENDING) else m }) }
+            try { saveHistory() } catch (e: Exception) { mutableState.value = before; throw e }
+        }, complete = { attempt, result ->
+            if (attempt.generation == generation && attempt.client === transport && account == state.value.account) {
+                val before = state.value
+                val failure = result.exceptionOrNull() as? Exception
+                failure?.let { noteSendFailure(attempt.message.peer, attempt.message.id, it) }
+                mutableState.update { it.copy(messages = it.messages.map { m ->
+                    if (m.mediaKey != attempt.message.mediaKey || m.delivery in setOf(MessageDelivery.SENT, MessageDelivery.DELIVERED, MessageDelivery.READ)) m
+                    else if (failure == null) m.withReceipt(m.peer, m.id, MessageDelivery.SENT)
+                    else m.copy(delivery = if (attempt.message.delivery == MessageDelivery.UNCERTAIN ||
+                        failure is UncertainSendException || failure is CancellationException) MessageDelivery.UNCERTAIN else MessageDelivery.FAILED)
+                }, error = failure?.let(::errorText), verificationPeer = if (failure is UndecidedOmemoIdentityException) attempt.message.peer else it.verificationPeer) }
+                try { saveHistory() } catch (e: Exception) { mutableState.value = before; throw e }
+            }
+        })
+    }
+    private fun resumePendingSends() {
+        state.value.messages.filter { it.outgoing && it.delivery == MessageDelivery.PENDING }.forEach(::queueSend)
+    }
     /** Remembers which messages wait for a device approval so approving can send them without retyping. */
     private fun noteSendFailure(peer: String, id: String, e: Exception) {
         if (e is UndecidedOmemoIdentityException) awaitingVerification.getOrPut(peer) { linkedSetOf() }.add(id)
@@ -591,34 +664,12 @@ class ChatViewModel internal constructor(
     fun retryMessage(message: ChatMessage) = task {
         val s = state.value
         val original = s.messages.find { it.id == message.id && it.peer == message.peer && it.outgoing } ?: return@task
-        if (original.peer != s.selectedPeer) return@task
-        resend(original)
+        if (original.peer == s.selectedPeer) resend(original)
     }
     private fun resend(original: ChatMessage) {
-        val s = state.value
-        if (original.delivery != MessageDelivery.FAILED && original.delivery != MessageDelivery.UNCERTAIN) return
+        if (original.delivery !in setOf(MessageDelivery.FAILED, MessageDelivery.UNCERTAIN)) return
         requireOnline()
-        if (original.peer in s.blocked) throw ChatException(UiText(R.string.chat_contact_blocked))
-        if (s.groups.any { it.address == original.peer && !it.joined }) throw ChatException(UiText(R.string.chat_group_not_joined))
-        // Reuse the same ID and record so duplicate taps and delayed receipts cannot create a second message.
-        mutableState.update { current -> current.copy(busy = true, error = null, messages = current.messages.map {
-            if (it.id == original.id && it.peer == original.peer && it.outgoing) it.copy(delivery = MessageDelivery.SENDING) else it
-        }) }
-        try {
-            saveHistory()
-            transport!!.send(original.peer, ChatPayload.encode(original), original.id)
-            mutableState.update { current -> current.copy(messages = current.messages.map {
-                it.withReceipt(original.peer, original.id, MessageDelivery.SENT)
-                // The draft that produced this message must not be sent a second time.
-            }, drafts = if (original.body.isNotBlank() && current.drafts[original.peer] == original.body)
-                current.drafts - original.peer else current.drafts) }
-        } catch (e: Exception) {
-            noteSendFailure(original.peer, original.id, e)
-            mutableState.update { current -> current.copy(error = errorText(e), messages = current.messages.map {
-                if (it.id == original.id && it.peer == original.peer && it.outgoing) it.copy(delivery = failedDelivery(e)) else it
-            }, verificationPeer = if (e is UndecidedOmemoIdentityException) original.peer else current.verificationPeer) }
-        } finally { mutableState.update { it.copy(busy = false) } }
-        saveHistory()
+        queueSend(original)
     }
     fun selectMedia(uri: android.net.Uri, videoNote: Boolean = false, asDocument: Boolean = false,
         expectedPeer: String? = state.value.selectedPeer, expectedAccount: String = state.value.account): kotlinx.coroutines.Job {
@@ -646,95 +697,120 @@ class ChatViewModel internal constructor(
     fun dismissMedia() {
         val selected = state.value.pendingMedia
         mutableState.update { it.copy(pendingMedia = if (it.pendingMedia == selected) null else it.pendingMedia) }
-        // The same mutex as uploads defers removal until an in-flight send has saved its preview.
+        // An active transfer holds a lease until its completion/cancellation cleanup.
         if (selected != null) task { releaseSelectedCapture(selected) }
     }
     private fun releaseSelectedCapture(selection: MediaSelection) {
         val service = media ?: return
         val path = service.ownCapturePath(selection) ?: return
-        if (state.value.pendingMedia?.uri != selection.uri && path !in state.value.mediaFiles.values) {
+        if (selection.uri !in captureLeases && state.value.pendingMedia?.uri != selection.uri && path !in state.value.mediaFiles.values) {
             service.removeOwnCapture(selection)
         }
     }
     internal fun sendSelectedMedia(caption: String, image: android.graphics.Bitmap? = null, edits: PhotoEdits = PhotoEdits(),
         quality: PhotoQuality = PhotoQuality.STANDARD): kotlinx.coroutines.Job {
-        // Bind the intended recipient and file at the user's tap, before waiting for serialized IO.
-        val selectedState = state.value
-        val original = selectedState.pendingMedia
-        val peer = selectedState.selectedPeer
-        return task {
-            if (original == null || peer == null || state.value.pendingMedia != original) return@task
-            requireOnline()
-            var exportedSelection: MediaSelection? = null
-            mutableState.update { it.copy(busy = true, mediaProgress = 0, error = null) }
-            try {
+        val initial = state.value
+        val original = initial.pendingMedia
+        val peer = initial.selectedPeer
+        val token = generation
+        return transfers.start(
+            prepare = {
+                if (original == null || peer == null || generation != token || state.value.pendingMedia != original) null
+                else UploadWork(transferSession(peer), original).also {
+                    captureLeases.add(original.uri)
+                    mutableState.update { it.copy(busy = true, mediaProgress = 0, error = null) }
+                }
+            },
+            transfer = { work ->
                 val service = requireNotNull(media)
-                val selected = if (image != null) {
-                    val file = service.exportImage(original, edits, quality)
-                    service.describe(android.net.Uri.fromFile(file)).also { exportedSelection = it }
-                } else original
-                val attachment = service.upload(selected, transport!!) { progress -> mutableState.update { it.copy(mediaProgress = progress) } }
-                sendContent(caption, attachment = attachment, clearDraft = !original.videoNote, targetPeer = peer)
-                state.value.messages.lastOrNull { it.outgoing && it.peer == peer && it.attachment == attachment }?.let { message ->
-                    mutableState.update { it.copy(pendingMedia = if (it.pendingMedia == original) null else it.pendingMedia) }
-                    val path = runCatching { service.previewCopy(selected).absolutePath }.getOrNull()
-                        // If copying fails, keep the original app capture as the message preview.
-                        // This never claims an edited photo preview is its unedited source.
-                        ?: service.ownCapturePath(selected)
-                    if (path != null) {
-                        mutableState.update { it.copy(mediaFiles = it.mediaFiles + (message.mediaKey to path)) }
+                var edited: MediaSelection? = null
+                try {
+                    val selection = if (image != null) service.exportImage(work.original, edits, quality).let {
+                        service.describe(android.net.Uri.fromFile(it)).also { value -> edited = value }
+                    } else work.original
+                    val attachment = service.upload(selection, work.session.client) { progress(work.session, it) }
+                    val preview = runCatching { service.previewCopy(selection).absolutePath }.getOrNull()
+                        ?: service.ownCapturePath(selection)
+                    Uploaded(attachment, selection, preview)
+                } catch (e: Exception) {
+                    edited?.let { service.removeOwnCapture(it) }
+                    throw e
+                }
+            },
+            commit = { work, result ->
+                if (current(work.session)) {
+                    sendContent(caption, attachment = result.attachment, clearDraft = !work.original.videoNote, targetPeer = work.session.peer)
+                    state.value.messages.lastOrNull { it.outgoing && it.peer == work.session.peer && it.attachment == result.attachment }?.let { message ->
+                        mutableState.update { it.copy(pendingMedia = if (it.pendingMedia == work.original) null else it.pendingMedia,
+                            mediaFiles = if (result.preview == null) it.mediaFiles else it.mediaFiles + (message.mediaKey to result.preview)) }
                         saveHistory()
-                        releaseSelectedCapture(original)
                     }
                 }
-            } finally {
-                exportedSelection?.let(::releaseSelectedCapture)
-                mutableState.update { it.copy(busy = false, mediaProgress = null) }
-            }
-        }
+            },
+            isCurrent = { current(it.session) }, cleanup = ::finishTransfer
+        )
     }
     /** The inline recorder keeps its private file on upload failure and never consumes the text draft. */
     internal fun sendVoiceRecording(peer: String, source: java.io.File, onComplete: (Boolean) -> Unit): kotlinx.coroutines.Job {
         val expectedAccount = state.value.account
-        val expectedGeneration = generation
+        val token = generation
         val accepted = java.util.concurrent.atomic.AtomicBoolean(false)
-        return task {
-            if (expectedAccount.isBlank() || state.value.account != expectedAccount || generation != expectedGeneration) return@task
-            requireOnline()
-            val initial = state.value
-            if (peer in initial.blocked) throw ChatException(UiText(R.string.chat_contact_blocked))
-            if (initial.groups.any { it.address == peer && !it.joined }) throw ChatException(UiText(R.string.chat_group_not_joined))
-            mutableState.update { it.copy(busy = true, mediaProgress = 0, error = null) }
-            try {
-                val service = requireNotNull(media)
-                val selection = service.describe(android.net.Uri.fromFile(source))
-                require(selection.mime == "audio/mp4")
-                val attachment = service.upload(selection, transport!!) { progress -> mutableState.update { it.copy(mediaProgress = progress) } }
-                try { sendContent("", attachment = attachment, clearDraft = false, targetPeer = peer) }
-                finally {
-                    // Once a message exists, another tap must not create a duplicate after a persistence error.
-                    accepted.set(state.value.messages.any { it.peer == peer && it.outgoing && it.attachment == attachment })
+        return transfers.start(
+            prepare = {
+                if (expectedAccount.isBlank() || state.value.account != expectedAccount || generation != token) null
+                else {
+                    val session = transferSession(peer)
+                    val selection = requireNotNull(media).describe(android.net.Uri.fromFile(source))
+                    require(selection.mime == "audio/mp4")
+                    captureLeases.add(selection.uri)
+                    mutableState.update { it.copy(busy = true, mediaProgress = 0, error = null) }
+                    UploadWork(session, selection)
                 }
-                state.value.messages.lastOrNull { it.peer == peer && it.outgoing && it.attachment == attachment }?.let { message ->
-                    // A FAILED message is retried through its existing action, never automatically.
-                    runCatching { service.previewCopy(selection).absolutePath }.getOrNull()?.let { path ->
-                        mutableState.update { it.copy(mediaFiles = it.mediaFiles + (message.mediaKey to path)) }
-                        saveHistory()
+            },
+            transfer = { work ->
+                val service = requireNotNull(media)
+                val attachment = service.upload(work.original, work.session.client) { progress(work.session, it) }
+                Uploaded(attachment, work.original, runCatching { service.previewCopy(work.original).absolutePath }.getOrNull())
+            },
+            commit = { work, result ->
+                if (current(work.session)) {
+                    try { sendContent("", attachment = result.attachment, clearDraft = false, targetPeer = peer) }
+                    finally { accepted.set(state.value.messages.any { it.peer == peer && it.outgoing && it.attachment == result.attachment }) }
+                    state.value.messages.lastOrNull { it.outgoing && it.peer == peer && it.attachment == result.attachment }?.let { message ->
+                        result.preview?.let { path ->
+                            mutableState.update { it.copy(mediaFiles = it.mediaFiles + (message.mediaKey to path)) }
+                            saveHistory()
+                        }
                     }
                 }
-            } finally { mutableState.update { it.copy(busy = false, mediaProgress = null) } }
-        }.also { job -> job.invokeOnCompletion { onComplete(accepted.get()) } }
+            },
+            isCurrent = { current(it.session) }, cleanup = { work, result ->
+                // The recorder owns the source until its completion callback accepts it.
+                captureLeases.remove(work.original.uri)
+                result?.preview?.takeIf { it !in state.value.mediaFiles.values }?.let { media?.removePreview(it) }
+                if (current(work.session)) mutableState.update { it.copy(busy = false, mediaProgress = null) }
+            }
+        ).also { job -> job.invokeOnCompletion { onComplete(accepted.get()) } }
     }
-    fun downloadMedia(message: ChatMessage) = task {
-        val file = message.attachment ?: return@task
-        if (message.peer != state.value.selectedPeer || message !in state.value.messages) return@task
-        requireOnline()
-        mutableState.update { it.copy(busy = true, mediaProgress = 0, error = null) }
-        try {
-            val path = requireNotNull(media).download(file, transport!!) { progress -> mutableState.update { it.copy(mediaProgress = progress) } }.absolutePath
-            mutableState.update { it.copy(mediaFiles = it.mediaFiles + (message.mediaKey to path)) }
-            saveHistory()
-        } finally { mutableState.update { it.copy(busy = false, mediaProgress = null) } }
+    fun downloadMedia(message: ChatMessage): kotlinx.coroutines.Job {
+        val token = generation
+        return transfers.start(
+            prepare = {
+                if (generation != token || message.attachment == null || message.peer != state.value.selectedPeer || message !in state.value.messages) null
+                else transferSession(message.peer).also { mutableState.update { s -> s.copy(busy = true, mediaProgress = 0, error = null) } }
+            },
+            transfer = { session -> requireNotNull(media).download(requireNotNull(message.attachment), session.client) { progress(session, it) }.absolutePath },
+            commit = { session, path ->
+                if (current(session) && state.value.messages.any { it.mediaKey == message.mediaKey }) {
+                    mutableState.update { it.copy(mediaFiles = it.mediaFiles + (message.mediaKey to path)) }
+                    saveHistory()
+                }
+            },
+            isCurrent = ::current, cleanup = { session, path ->
+                path?.takeIf { it !in state.value.mediaFiles.values }?.let { media?.removePreview(it) }
+                if (current(session)) mutableState.update { it.copy(busy = false, mediaProgress = null) }
+            }
+        )
     }
     fun shareContact(address: String) = state.value.selectedPeer.let { peer ->
         task { if (peer != null) sendContent("", contact = chatAddress(address), clearDraft = false, targetPeer = peer) }
@@ -842,6 +918,8 @@ class ChatViewModel internal constructor(
     }
     fun logout() = task {
         ++generation
+        transfers.cancel()
+        sends.cancel()
         retryJob?.cancel()
         autoRetryBlocked = false
         transport?.disconnect()
@@ -854,72 +932,11 @@ class ChatViewModel internal constructor(
         clearNotification(null)
     }
 
-    private fun saveHistory() {
-        val s = state.value
-        if (s.account.isBlank()) return
-        val json = JSONObject().put("readReceipts", s.readReceipts).put("blocked", JSONArray(s.blocked.toList()))
-            .put("requests", JSONArray(s.requests.toList())).put("profile", s.profile.toJson())
-            .put("publishedProfile", s.publishedProfile?.toJson())
-            .put("contactProfiles", JSONObject(s.contactProfiles.mapValues { it.value.toJson() }))
-            .put("contacts", JSONArray(s.contacts.map { JSONObject().put("address", it.address).put("name", it.name).put("group", it.group) }))
-            .put("drafts", JSONObject(s.drafts))
-            .put("mediaFiles", JSONObject(s.mediaFiles))
-            .put("conversationOptions", JSONObject(s.conversationOptions.mapValues { (_, o) -> JSONObject()
-                .put("pinned", o.pinned).put("muted", o.muted).put("hidden", o.hidden).put("deletedBefore", o.deletedBefore)
-                .put("deletedIds", JSONArray(o.deletedIds.toList())).put("appearance", o.appearance?.toJson())
-                .put("alias", o.alias).put("phone", o.phone) }))
-            .put("groups", JSONArray(s.groups.map { JSONObject().put("address", it.address).put("name", it.name)
-                .put("members", JSONArray(it.members.toList())).put("owner", it.owner).put("joined", it.joined) }))
-            .put("invitations", JSONArray(s.invitations.map { JSONObject().put("room", it.room).put("inviter", it.inviter) }))
-            .put("messages", JSONArray(s.messages.map { m -> JSONObject().put("id", m.id).put("peer", m.peer)
-                .put("body", ChatPayload.encode(m)).put("sender", m.sender).put("outgoing", m.outgoing).put("timestamp", m.timestamp).put("delivery", m.delivery.name)
-                .put("protection", m.protection.name).put("read", m.read).put("markable", m.markable) }))
-        records.put("history/${s.account}", json.toString())
-    }
-    private fun readHistory(value: String): ChatUiState {
-        val json = JSONObject(value)
-        val contacts = json.getJSONArray("contacts")
-        val messages = json.getJSONArray("messages")
-        val blocked = json.getJSONArray("blocked")
-        val groups = json.optJSONArray("groups") ?: JSONArray()
-        val invitations = json.optJSONArray("invitations") ?: JSONArray()
-        val drafts = json.optJSONObject("drafts") ?: JSONObject()
-        val requests = json.optJSONArray("requests") ?: JSONArray()
-        val options = json.optJSONObject("conversationOptions") ?: JSONObject()
-        val files = json.optJSONObject("mediaFiles") ?: JSONObject()
-        val profiles = json.optJSONObject("contactProfiles") ?: JSONObject()
-        // A send interrupted by a crash keeps its message (now UNCERTAIN); the same text must not also wait in the composer.
-        val interrupted = (0 until messages.length()).map { messages.getJSONObject(it) }
-            .filter { it.getString("delivery") == MessageDelivery.SENDING.name && it.getBoolean("outgoing") }
-            .associate { it.getString("peer") to ChatPayload.decode(ChatMessage("", "", it.getString("body"), true, 0)).body }
-        return ChatUiState(readReceipts = json.optBoolean("readReceipts", true),
-            profile = json.optJSONObject("profile")?.let(ChatProfile::fromJson) ?: ChatProfile(),
-            publishedProfile = json.optJSONObject("publishedProfile")?.let(PublishedChatProfile::fromJson),
-            contactProfiles = profiles.keys().asSequence().take(200).associateWith { PublishedChatProfile.fromJson(profiles.getJSONObject(it)) },
-            mediaFiles = files.keys().asSequence().associateWith { files.getString(it) }.filterValues { media?.hasPreview(it) == true },
-            conversationOptions = options.keys().asSequence().associateWith { key -> options.getJSONObject(key).let {
-                val ids = it.optJSONArray("deletedIds") ?: JSONArray()
-                ConversationOptions(it.optBoolean("pinned"), it.optBoolean("muted"), it.optBoolean("hidden"), it.optLong("deletedBefore"),
-                    (0 until ids.length()).map { index -> ids.getString(index) }.toSet(),
-                    it.optJSONObject("appearance")?.let { value -> runCatching { ChatAppearance.fromJson(value) }.getOrNull() }, it.optString("alias"), it.optString("phone")) } },
-            drafts = drafts.keys().asSequence().associateWith { drafts.getString(it) }
-                .filter { (peer, text) -> interrupted[peer] != text },
-            groups = (0 until groups.length()).map { groups.getJSONObject(it).let { g ->
-                val members = g.getJSONArray("members")
-                ChatGroup(g.getString("address"), g.getString("name"), (0 until members.length()).map { members.getString(it) }.toSet(),
-                    g.optBoolean("owner"), false) } },
-            invitations = (0 until invitations.length()).map { invitations.getJSONObject(it).let { i -> GroupInvitation(i.getString("room"), i.getString("inviter")) } },
-            requests = (0 until requests.length()).map { requests.getString(it) }.toSet(),
-            blocked = (0 until blocked.length()).map { blocked.getString(it) }.toSet(),
-            contacts = (0 until contacts.length()).map { contacts.getJSONObject(it).let { c -> ChatContact(c.getString("address"), c.getString("name"), group = c.optBoolean("group")) } },
-            messages = (0 until messages.length()).map { messages.getJSONObject(it).let { m ->
-                val status = MessageDelivery.valueOf(m.getString("delivery"))
-                ChatPayload.decode(ChatMessage(m.getString("id"), m.getString("peer"), m.getString("body"), m.getBoolean("outgoing"), m.getLong("timestamp"),
-                    if (status == MessageDelivery.SENDING) MessageDelivery.UNCERTAIN else status,
-                    MessageProtection.valueOf(m.getString("protection")), m.getBoolean("read"), m.optBoolean("markable"), sender = m.optString("sender")))
-            } })
-    }
+    private fun saveHistory() = history.save(state.value)
+
     override fun onCleared() {
+        transfers.cancel()
+        sends.cancel()
         ++generation
         // Socket close can block; never run it on the UI thread.
         val current = transport

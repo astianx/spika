@@ -91,6 +91,8 @@ internal fun ChatMessage.displayBody(): String = when (protection) {
 internal val MessageDelivery.canRetry: Boolean get() = this == MessageDelivery.FAILED || this == MessageDelivery.UNCERTAIN
 
 internal fun MessageDelivery.labelRes(): Int = when (this) {
+    MessageDelivery.PENDING -> R.string.chat_pending
+    MessageDelivery.PREPARING -> R.string.chat_preparing
     MessageDelivery.SENDING -> R.string.chat_sending
     MessageDelivery.SENT -> R.string.chat_sent
     MessageDelivery.DELIVERED -> R.string.chat_delivered
@@ -100,7 +102,7 @@ internal fun MessageDelivery.labelRes(): Int = when (this) {
 }
 
 internal fun MessageDelivery.icon(): ImageVector = when (this) {
-    MessageDelivery.SENDING -> Icons.Outlined.Schedule
+    MessageDelivery.PENDING, MessageDelivery.PREPARING, MessageDelivery.SENDING -> Icons.Outlined.Schedule
     MessageDelivery.SENT -> Icons.Outlined.Done
     MessageDelivery.DELIVERED, MessageDelivery.READ -> Icons.Outlined.DoneAll
     MessageDelivery.FAILED -> Icons.Outlined.ErrorOutline
@@ -238,7 +240,7 @@ internal fun ChatError(error: UiText?, onDismiss: () -> Unit) {
 
 @Composable
 internal fun ChatComposer(
-    draft: String, onDraft: (String) -> Unit, enabled: Boolean, expanded: Boolean,
+    draft: String, onDraft: (String) -> Unit, enabled: Boolean, expanded: Boolean, mediaEnabled: Boolean = enabled,
     onExpand: () -> Unit, onEmoji: () -> Unit, onVoice: () -> Unit, onSend: () -> Unit,
     onTyping: () -> Unit
 ) {
@@ -248,7 +250,7 @@ internal fun ChatComposer(
         verticalAlignment = Alignment.Bottom) {
         Row(Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(24.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant), verticalAlignment = Alignment.Bottom) {
-            IconButton(onClick = onExpand, enabled = enabled, modifier = Modifier.size(48.dp)) {
+            IconButton(onClick = onExpand, enabled = mediaEnabled, modifier = Modifier.size(48.dp)) {
                 Icon(if (expanded) Icons.Outlined.Close else Icons.Outlined.AttachFile,
                     stringResource(if (expanded) R.string.close else R.string.chat_attach), Modifier.size(24.dp),
                     tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -275,7 +277,7 @@ internal fun ChatComposer(
             }
         }
         Spacer(Modifier.width(8.dp))
-        androidx.compose.material3.FilledIconButton(onClick = if (draft.isNotBlank()) onSend else onVoice, enabled = enabled,
+        androidx.compose.material3.FilledIconButton(onClick = if (draft.isNotBlank()) onSend else onVoice, enabled = if (draft.isNotBlank()) enabled else mediaEnabled,
             modifier = Modifier.size(48.dp)) {
             Icon(if (draft.isNotBlank()) Icons.AutoMirrored.Filled.Send else Icons.Outlined.MicNone,
                 stringResource(if (draft.isNotBlank()) R.string.send else R.string.chat_record), Modifier.size(24.dp),

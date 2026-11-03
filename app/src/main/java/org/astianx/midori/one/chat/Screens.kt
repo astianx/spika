@@ -419,6 +419,8 @@ fun ConversationScreen(chat: ChatViewModel, onNavigate: (Screen) -> Unit) {
     val list = androidx.compose.foundation.lazy.rememberLazyListState()
     val messages = s.messages.filter { it.peer == peer }.asReversed()
     val canSend = s.connection == ChatConnection.ONLINE && !s.busy && peer !in s.blocked && (group == null || group.joined)
+    val canQueue = s.account.isNotBlank() && !s.busy && peer !in s.blocked &&
+        (group == null || group.joined || s.connection != ChatConnection.ONLINE)
     val context = LocalContext.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focus = androidx.compose.ui.platform.LocalFocusManager.current
@@ -565,7 +567,7 @@ fun ConversationScreen(chat: ChatViewModel, onNavigate: (Screen) -> Unit) {
         else if (recordVoice) ChatVoiceRecorderBar(chat, peer, canSend, onClose = { recordVoice = false })
         else Column {
         s.replyingTo?.takeIf { it.peer == peer }?.let { ReplyBar(it, chat::cancelReply) }
-        ChatComposer(draft, chat::updateDraft, canSend, attachments,
+        ChatComposer(draft, chat::updateDraft, canQueue, attachments, mediaEnabled = canSend,
             onExpand = { emojis = false; attachments = !attachments; focus.clearFocus(); keyboard?.hide() },
             onEmoji = { attachments = false; emojis = !emojis; focus.clearFocus(); keyboard?.hide() },
             onVoice = { audio.pause(); closeTray(); focus.clearFocus(); keyboard?.hide(); microphone.launch(android.Manifest.permission.RECORD_AUDIO) },
